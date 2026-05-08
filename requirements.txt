@@ -1,0 +1,3 @@
+# This project is built with Node.js.
+# Please use 'npm install' to install dependencies.
+# Dependencies are listed in package.json.
