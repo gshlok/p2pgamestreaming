@@ -69,6 +69,16 @@ app.use(express.static(WEB_ROOT, {
     }
 }));
 
+// Serve levels
+const LEVELS_ROOT = path.join(__dirname, 'Tomb-Raider-1-2-3-4-5-Map-viewer-and-levels');
+app.use('/levels', express.static(LEVELS_ROOT, {
+    setHeaders: (res, filePath) => {
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+        res.setHeader('Cache-Control', 'no-store');
+    }
+}));
+
 const server = http.createServer(app);
 
 // ---------------------------------------------------------------------------

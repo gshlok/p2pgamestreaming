@@ -177,22 +177,31 @@
 				};
 			</script>
 
-			<div id="info">
-				<input type="file" id="browseFile" style="display:none" accept=".phd,.psx, .tr2, .tr4" onchange="readLevel(event)" />
-				<input type="button" value="Browse Level" onclick="document.getElementById('browseFile').click();" /> (.PHD, .PSX, .TR2, .TR4)&nbsp;
-				<!--
-				<input type="button" value="Backup Saves" onclick="backupSaves();" />
-				<input type="button" value="Restore Saves" onclick="restoreSaves();" />
--->
-				<div style="margin:8px">
-					OpenLara on <a target="_blank" href="https://github.com/XProger/OpenLara">github</a> & <a target="_blank" href="https://www.facebook.com/OpenLaraTR">facebook</a><br>
-				
-					<div id="latest_changes" style="margin:8px">
-						<br><i>last update: <?php
-							echo date("d.m.Y", filemtime("./OpenLara.js.gz"));
-						?></i><br>
-						<input type="button" value="Latest changes" onclick="getLatestChanges()" />
-					</div>
+			<div id="level-selector" style="position:fixed; bottom:20px; left:20px; z-index:9999; background: rgba(15, 15, 20, 0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 15px; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+				<div style="font-weight: 600; font-size: 14px; margin-bottom: 10px; color: rgba(255,255,255,0.9); display: flex; align-items: center; gap: 8px;">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
+					Level Selection
+				</div>
+				<div style="display: flex; gap: 10px; align-items: center;">
+					<select id="levelSelect" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; cursor: pointer; min-width: 220px; font-family: inherit;">
+						<option value="Tomb-Raider-1/01-Caves.PHD">01 - Caves</option>
+						<option value="Tomb-Raider-1/02-City-of-Vilcabamba.PHD">02 - City of Vilcabamba</option>
+						<option value="Tomb-Raider-1/03-The-Lost-Valley.PHD">03 - The Lost Valley</option>
+						<option value="Tomb-Raider-1/04-Tomb-of-Qualopec.PHD">04 - Tomb of Qualopec</option>
+						<option value="Tomb-Raider-1/05-St-Francis-Folly.PHD">05 - St Francis Folly</option>
+						<option value="Tomb-Raider-1/06-Colosseum.PHD">06 - Colosseum</option>
+						<option value="Tomb-Raider-1/07-Palace-Midas.PHD">07 - Palace Midas</option>
+						<option value="Tomb-Raider-1/08-Cistern.PHD">08 - Cistern</option>
+						<option value="Tomb-Raider-1/09-Tomb-of-Tihocan.PHD">09 - Tomb of Tihocan</option>
+						<option value="Tomb-Raider-1/10-City-of-Khamoon.PHD">10 - City of Khamoon</option>
+						<option value="Tomb-Raider-1/11-Obelisk-of-Khamoon.PHD">11 - Obelisk of Khamoon</option>
+						<option value="Tomb-Raider-1/12-Sanctuary-of-the-Scion.PHD">12 - Sanctuary of the Scion</option>
+						<option value="Tomb-Raider-1/13-Natlas-Mines.PHD">13 - Natlas Mines</option>
+						<option value="Tomb-Raider-1/14-Atlantis.PHD">14 - Atlantis</option>
+						<option value="Tomb-Raider-1/15-The-Great-Pyramid.PHD">15 - The Great Pyramid</option>
+					</select>
+					<button onclick="loadSelectedLevel()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s; font-family: inherit;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">Load</button>
+					<button onclick="jumpNextLevel()" style="background: rgba(74, 144, 226, 0.3); border: 1px solid rgba(74, 144, 226, 0.5); color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s; font-family: inherit;" onmouseover="this.style.background='rgba(74, 144, 226, 0.5)'" onmouseout="this.style.background='rgba(74, 144, 226, 0.3)'">Next Level ⏭</button>
 				</div>
 			</div>
 
@@ -239,78 +248,41 @@
 					document.getElementById('info').style.display = 'none';
 				}
 
-				function getLatestChanges() {
-					var xhr = new XMLHttpRequest();
-					
-					xhr.onreadystatechange = function() {
-						if (this.readyState === 4 && this.status === 200) {
-							e = document.getElementById('latest_changes');
-							str = '<table>';
-							for (var i = 0; i < this.response.length; i++) {
-								var item = this.response[i];
-								var d = new Date(item.commit.author.date);
-								var date = d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear();
-								str += '<tr><td>' + date + '</td><td border="1px">' + item.commit.message + '</td></tr>';
-							}
-							str += '</table>';
-							e.innerHTML = str;
-						}
-					};
-					
-					xhr.open('GET', "https://api.github.com/repos/XProger/OpenLara/commits", true);
-					xhr.responseType = 'json';
-					xhr.send(null);				
+				async function loadSelectedLevel() {
+					const select = document.getElementById('levelSelect');
+					const levelPath = select.value;
+					loadLevelFromUrl(`/levels/${levelPath}`);
 				}
-				
-				function readLevel(event) {
-					var reader = new FileReader();
-					reader.onload = function(){
-						var size = reader.result.byteLength;
-						var data = Module._malloc(size);
-						Module.writeArrayToMemory(new Uint8Array(reader.result), data);
+
+				function jumpNextLevel() {
+					const select = document.getElementById('levelSelect');
+					if (select.selectedIndex < select.options.length - 1) {
+						select.selectedIndex += 1;
+						loadSelectedLevel();
+					} else {
+						select.selectedIndex = 0;
+						loadSelectedLevel();
+					}
+				}
+
+				async function loadLevelFromUrl(url) {
+					Module.setStatus('Loading level data...');
+					try {
+						// Using fetch will automatically route through our P2P wrapper
+						const response = await fetch(url);
+						if (!response.ok) throw new Error(`Failed to load level: ${response.status}`);
+						
+						const buffer = await response.arrayBuffer();
+						const size = buffer.byteLength;
+						const data = Module._malloc(size);
+						Module.writeArrayToMemory(new Uint8Array(buffer), data);
 						Module.ccall('game_level_load', 'null', ['number', 'number'], [data, size]);
-					};
-					reader.readAsArrayBuffer(event.target.files[0]);
-				}
-				/*
-				var db;      
-				var request = indexedDB.open("db");
-request.onupgradeneeded = function() {
-console.log("!!!!!!!! NO DB!");
-};
-request.onsuccess = function() {
-  db = request.result;
-  // Enable our buttons once the IndexedDB instance is available.
-
-};
-
- function logTimestamps(timestamps) {
-  console.log('There are ' + timestamps.length +
-	' timestamp(s) saved in IndexedDB: ' + timestamps.join(', '));
-} 
-				
-				function backupSaves() {
-
-  var transaction = db.transaction("FILE_DATA", 'readonly');
-  var store = transaction.objectStore("FILE_DATA");
-  store.get("level/1/GYMLOAD.PNG").onsuccess = function(e) {
-	var value = e.target.result;
-	// value will be: { zip: {}, foo: { bar: { baz: 1 } } }
-	console.log(value);
-					var data = value;
-					var a = document.createElement("a");
-					
-					a.href     = URL.createObjectURL(new Blob([data]));
-					a.download = "savegame.dat";
-					document.body.appendChild(a);
-					a.click();
-					document.body.removeChild(a);    
-  };
-
-				}
-*/
-				function restoreSaves() {
-					alert('restore');
+						
+						Module.setStatus('');
+					} catch (e) {
+						Module.setStatus(`Error loading level: ${e.message}`);
+						console.error(e);
+					}
 				}
 			</script>
 
