@@ -1,0 +1,14 @@
+{
+  "name": "p2p-game-streaming",
+  "version": "1.0.0",
+  "description": "Peer-assisted runtime asset streaming for games — OpenLara demo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --throttle"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}
