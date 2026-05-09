@@ -17,22 +17,23 @@
         #game-select-btn {
             position: fixed;
             bottom: 24px;
-            left: 24px;
+            left: 360px;
             z-index: 1000;
-            background: rgba(0, 240, 255, 0.1);
-            border: 1px solid rgba(0, 240, 255, 0.3);
+            background: rgba(0, 240, 255, 0.05);
+            border: 1px solid rgba(0, 240, 255, 0.2);
             color: #00f0ff;
-            padding: 10px 20px;
-            border-radius: 8px;
+            padding: 8px 16px;
+            border-radius: 6px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             cursor: pointer;
             backdrop-filter: blur(10px);
             transition: all 0.2s;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            pointer-events: auto;
         }
         #game-select-btn:hover { background: rgba(0, 240, 255, 0.2); border-color: #00f0ff; }
         
@@ -59,7 +60,7 @@
 
     <!-- Game Viewport -->
     <div id="game-container">
-        <iframe id="game-viewport" src="OpenLara/src/platform/web/index.html"></iframe>
+        <iframe id="game-viewport" src="OpenLara/src/platform/web/index.html" allow="autoplay; fullscreen; pointer-lock"></iframe>
     </div>
 
     <!-- UI Overlay (Canonical v2 HUD) -->
@@ -84,6 +85,24 @@
                     window.ui = new StreamingUI(window.p2pManager);
                 }
             }, 100);
+        });
+
+        window.loadLevel = (id) => {
+            console.log('[Main] Loading level:', id);
+            const viewport = document.getElementById('game-viewport');
+            if (viewport && viewport.contentWindow) {
+                viewport.contentWindow.postMessage({ type: 'load-level', level: id }, '*');
+                viewport.focus();
+            }
+        };
+
+        // Ensure clicking on the game container focuses the game
+        document.getElementById('game-container').addEventListener('click', () => {
+            const viewport = document.getElementById('game-viewport');
+            if (viewport) {
+                viewport.focus();
+                viewport.contentWindow.postMessage({ type: 'focus-game' }, '*');
+            }
         });
     </script>
 </body>

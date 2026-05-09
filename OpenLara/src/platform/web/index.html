@@ -10,7 +10,7 @@
     </style>
 </head>
 <body>
-    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    <canvas id="canvas" tabindex="1" style="outline: none;" oncontextmenu="event.preventDefault()"></canvas>
 
     <script src="../../../../../p2p-bootstrap.js"></script>
 
@@ -55,7 +55,21 @@
 
         window.addEventListener('click', () => {
             if (audioContext && audioContext.state === 'suspended') audioContext.resume();
-        }, { once: true });
+            
+            // Request Pointer Lock and Focus
+            canvasElement.focus();
+            if (canvasElement.requestPointerLock) {
+                canvasElement.requestPointerLock();
+            }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === canvasElement) {
+                canvasElement.classList.add('locked');
+            } else {
+                canvasElement.classList.remove('locked');
+            }
+        });
 
         function getLanguage() {
             var lang = navigator.languages && navigator.languages[0] || navigator.language || navigator.userLanguage;
@@ -89,6 +103,38 @@
         }
         window.addEventListener('resize', resize);
         resize();
+
+        // Communication with parent
+        window.addEventListener('message', (e) => {
+            if (e.data.type === 'load-level') {
+                const levelId = e.data.level;
+                console.log('[Engine] Autoloading level:', levelId);
+                
+                const levelPath = 'level/' + levelId;
+                Module.setStatus('Streaming Level Assets...');
+                
+                fetch(levelPath).then(res => res.arrayBuffer()).then(buffer => {
+                    const data = new Uint8Array(buffer);
+                    const ptr = Module._malloc(data.length);
+                    Module.HEAPU8.set(data, ptr);
+                    
+                    // Notify engine to start the level
+                    Module.ccall('game_level_load', 'null', ['number', 'number'], [ptr, data.length]);
+                    
+                    Module.setStatus('');
+                    canvasElement.focus();
+                }).catch(err => {
+                    console.error('[Engine] Load Error:', err);
+                    Module.setStatus('Error loading level');
+                });
+            }
+            if (e.data.type === 'focus-game') {
+                canvasElement.focus();
+                if (canvasElement.requestPointerLock) {
+                    canvasElement.requestPointerLock();
+                }
+            }
+        });
     </script>
 </body>
 </html>

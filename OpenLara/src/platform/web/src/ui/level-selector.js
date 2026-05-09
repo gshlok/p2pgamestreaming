@@ -10,21 +10,18 @@ export class LevelSelector {
     
     this.onSelect = onSelect;
     this.levels = [
-      { id: 'Tomb-Raider-1/01-Caves.PHD', name: '01 Caves' },
-      { id: 'Tomb-Raider-1/02-City-of-Vilcabamba.PHD', name: '02 Vilcabamba' },
-      { id: 'Tomb-Raider-1/03-The-Lost-Valley.PHD', name: '03 Lost Valley' },
-      { id: 'Tomb-Raider-1/04-Tomb-of-Qualopec.PHD', name: '04 Qualopec' },
-      { id: 'Tomb-Raider-1/05-St-Francis-Folly.PHD', name: '05 St Francis' },
-      { id: 'Tomb-Raider-1/06-Colosseum.PHD', name: '06 Colosseum' },
-      { id: 'Tomb-Raider-1/07-Palace-Midas.PHD', name: '07 Palace Midas' },
-      { id: 'Tomb-Raider-1/08-Cistern.PHD', name: '08 Cistern' },
-      { id: 'Tomb-Raider-1/09-Tomb-of-Tihocan.PHD', name: '09 Tihocan' },
-      { id: 'Tomb-Raider-1/10-City-of-Khamoon.PHD', name: '10 Khamoon' },
-      { id: 'Tomb-Raider-1/11-Obelisk-of-Khamoon.PHD', name: '11 Obelisk' },
-      { id: 'Tomb-Raider-1/12-Sanctuary-of-the-Scion.PHD', name: '12 Scion' },
-      { id: 'Tomb-Raider-1/13-Natlas-Mines.PHD', name: '13 Mines' },
-      { id: 'Tomb-Raider-1/14-Atlantis.PHD', name: '14 Atlantis' },
-      { id: 'Tomb-Raider-1/15-The-Great-Pyramid.PHD', name: '15 Pyramid' }
+      { id: '1/LEVEL1.PSX', name: '01 Caves' },
+      { id: '1/LEVEL2.PSX', name: '02 Vilcabamba' },
+      { id: '1/LEVEL3A.PSX', name: '03 Lost Valley' },
+      { id: '1/LEVEL4.PSX', name: '04 Qualopec' },
+      { id: '1/LEVEL5.PSX', name: '05 St Francis' },
+      { id: '1/LEVEL6.PSX', name: '06 Colosseum' },
+      { id: '1/LEVEL7A.PSX', name: '07 Palace Midas' },
+      { id: '1/LEVEL8A.PSX', name: '08 Cistern' },
+      { id: '1/LEVEL10A.PSX', name: '10 Khamoon' },
+      { id: '1/LEVEL10B.PSX', name: '11 Obelisk' },
+      { id: '1/LEVEL10C.PSX', name: '12 Scion' },
+      { id: '1/GYM.PSX', name: 'Laras Home' }
     ];
 
     this.init();
@@ -47,6 +44,7 @@ export class LevelSelector {
     
     this.select.addEventListener('change', () => {
       if (this.onSelect) this.onSelect(this.select.value);
+      this.select.blur(); // Return focus to the window/game
     });
     
     this.container.appendChild(label);

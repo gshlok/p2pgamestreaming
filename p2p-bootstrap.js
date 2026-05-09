@@ -519,8 +519,8 @@
     async function boot() {
         p2p = new P2PManager({ originalFetch: _originalFetch, originFetchesInFlight: _originInFlight });
         window.p2pManager = p2p;
-        const overlay = new P2POverlay(p2p);
-        window.p2pOverlay = overlay;
+        // const overlay = new P2POverlay(p2p);
+        // window.p2pOverlay = overlay;
         document.addEventListener('keydown', (e) => { if (e.key === 'F2') overlay.toggle(); });
         try { await p2p.connect(); } catch (e) { console.warn('[P2P] Offline mode'); }
     }
