@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chocolate Doom WASM</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
+        #canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+    <script src="../p2p-bootstrap.js"></script>
+    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    <script>
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            arguments: ["-iwad", "doom1.wad", "-window"],
+            print: function(text) { console.log("DOOM: " + text); },
+            printErr: function(text) { console.error("DOOM: " + text); },
+            setStatus: function(text) { console.log("DOOM Status: " + text); },
+            monitorRunDependencies: function(left) {
+                console.log("DOOM Dependencies: " + left);
+            }
+        };
+        
+        // Load the engine
+        const script = document.createElement('script');
+        script.src = 'chocolate-doom.js';
+        document.body.appendChild(script);
+    </script>
+</body>
+</html>

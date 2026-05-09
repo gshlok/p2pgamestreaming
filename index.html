@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>P2P Game Asset Streaming Platform</title>
+    <link href="OpenLara/src/platform/web/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="viewport-fit=cover, user-scalable=no, width=device-width, initial-scale=1, maximum-scale=1">
+    
+    <link rel="stylesheet" href="OpenLara/src/platform/web/src/ui/styles.css">
+    <style>
+        body { margin: 0; background: #050508; color: #fff; overflow: hidden; font-family: 'Inter', sans-serif; }
+        #game-viewport { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 1; }
+        #ui-root { z-index: 10; position: relative; pointer-events: none; }
+        #ui-root * { pointer-events: auto; }
+        
+        /* Game Selector Button */
+        #game-select-btn {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            z-index: 1000;
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            color: #00f0ff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #game-select-btn:hover { background: rgba(0, 240, 255, 0.2); border-color: #00f0ff; }
+        
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #050508;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            transition: opacity 0.5s;
+        }
+        .loader-ring { width: 40px; height: 40px; border: 2px solid rgba(0, 240, 255, 0.1); border-top-color: #00f0ff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Single P2P Layer for ALL games -->
+    <script src="p2p-bootstrap.js"></script>
+
+    <!-- Game Viewport -->
+    <div id="game-container">
+        <iframe id="game-viewport" src="OpenLara/src/platform/web/index.html"></iframe>
+    </div>
+
+    <!-- UI Overlay (Canonical v2 HUD) -->
+    <div id="ui-root"></div>
+
+    <!-- Game Selector Button -->
+    <button id="game-select-btn">
+        <span style="font-size: 18px;">🎮</span>
+        SELECT GAME
+    </button>
+
+    <!-- Game Selector Module -->
+    <script src="game-selector.js"></script>
+
+    <script type="module">
+        import { StreamingUI } from './OpenLara/src/platform/web/src/ui/index.js';
+        
+        window.addEventListener('load', () => {
+            const checkP2P = setInterval(() => {
+                if (window.p2pManager) {
+                    clearInterval(checkP2P);
+                    window.ui = new StreamingUI(window.p2pManager);
+                }
+            }, 100);
+        });
+    </script>
+</body>
+</html>
+

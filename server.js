@@ -36,13 +36,25 @@ const PEER_TIMEOUT = 15000;        // ms before peer is considered dead
 // Asset file extensions that get throttled (to make P2P visibly faster)
 const THROTTLED_EXTENSIONS = ['.PSX', '.PHD', '.TR2', '.TR4', '.SFX', '.ogg', '.mp3', '.wav', '.PNG', '.RAW', '.BMP'];
 
-const WEB_ROOT = path.join(__dirname, 'OpenLara', 'src', 'platform', 'web');
+const WEB_ROOT = __dirname;
 
 // ---------------------------------------------------------------------------
 // Express — Static File Server
 // ---------------------------------------------------------------------------
 
 const app = express();
+
+// Request logging middleware
+app.use((req, res, next) => {
+    res.on('finish', () => {
+        if (res.statusCode >= 400) {
+            console.warn(`[HTTP] ${res.statusCode} ${req.method} ${req.url}`);
+        } else {
+            // console.log(`[HTTP] ${res.statusCode} ${req.method} ${req.url}`);
+        }
+    });
+    next();
+});
 
 // Artificial throttle middleware for asset files
 if (THROTTLE_ENABLED) {
@@ -85,7 +97,7 @@ const server = http.createServer(app);
 // WebSocket — Signaling Server
 // ---------------------------------------------------------------------------
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 50 * 1024 * 1024 }); // 50MB for asset relay
 
 /**
  * Peer registry
@@ -139,6 +151,13 @@ wss.on('connection', (ws, req) => {
             return;
         }
 
+        // Log ALL messages for debugging
+        if (msg.type !== 'heartbeat') {
+            const logData = { ...msg };
+            if (logData.data) logData.data = `[${logData.data.length} chars base64]`;
+            console.log(`[WS-MSG] ${peerId || '?'} → ${msg.type}:`, JSON.stringify(logData).slice(0, 200));
+        }
+
         switch (msg.type) {
             // -----------------------------------------------------------
             // Peer registration
@@ -188,11 +207,13 @@ wss.on('connection', (ws, req) => {
                 if (peerId && peers.has(peerId)) {
                     const peer = peers.get(peerId);
                     const newAssets = msg.assets || [];
+                    console.log(`[ANNOUNCE] ${peerId} announcing ${newAssets.length} new assets: ${newAssets.join(', ')}`);
                     for (const a of newAssets) {
                         if (!peer.assets.includes(a)) {
                             peer.assets.push(a);
                         }
                     }
+                    console.log(`[ANNOUNCE] ${peerId} total assets now: ${peer.assets.length} — [${peer.assets.join(', ')}]`);
 
                     // Notify all other peers
                     broadcastExcept(peerId, {
@@ -205,40 +226,62 @@ wss.on('connection', (ws, req) => {
             }
 
             // -----------------------------------------------------------
-            // WebRTC signaling relay & WebSocket transfer fallback
+            // WebRTC signaling relay
             // -----------------------------------------------------------
             case 'rtc-offer':
             case 'rtc-answer':
-            case 'rtc-ice':
-            case 'ws-transfer-request':
-            case 'ws-transfer-response': {
+            case 'rtc-ice': {
                 if (msg.to) {
                     sendTo(msg.to, {
                         type: msg.type,
                         from: peerId,
                         signal: msg.signal,
-                        assetName: msg.assetName,
-                        data: msg.data,
-                        size: msg.size,
-                        hash: msg.hash
+                        assetName: msg.assetName
                     });
                 }
                 break;
             }
 
             // -----------------------------------------------------------
-            // Asset request (ask if any peer has an asset)
+            // Asset request (ask a specific peer or broadcast for an asset)
             // -----------------------------------------------------------
             case 'asset-request': {
-                // Broadcast to all peers who have this asset
-                for (const [id, peer] of peers) {
-                    if (id !== peerId && peer.assets.includes(msg.assetName)) {
-                        sendTo(id, {
-                            type: 'asset-request',
-                            from: peerId,
-                            assetName: msg.assetName
-                        });
+                if (msg.to) {
+                    // Targeted request to a specific peer
+                    sendTo(msg.to, {
+                        type: 'asset-request',
+                        from: peerId,
+                        assetName: msg.assetName
+                    });
+                } else {
+                    // Broadcast to all peers who have this asset
+                    for (const [id, peer] of peers) {
+                        if (id !== peerId && peer.assets.includes(msg.assetName)) {
+                            sendTo(id, {
+                                type: 'asset-request',
+                                from: peerId,
+                                assetName: msg.assetName
+                            });
+                        }
                     }
+                }
+                break;
+            }
+
+            // -----------------------------------------------------------
+            // WebSocket asset relay (peer sends asset data via WS to another peer)
+            // -----------------------------------------------------------
+            case 'ws-relay-asset': {
+                if (msg.to) {
+                    console.log(`[WS-RELAY] ${peerId} → ${msg.to}: ${msg.assetName} (${msg.size ? (msg.size / 1024).toFixed(1) + 'KB' : '?'})`);
+                    sendTo(msg.to, {
+                        type: 'ws-relay-asset',
+                        from: peerId,
+                        assetName: msg.assetName,
+                        data: msg.data,
+                        hash: msg.hash,
+                        size: msg.size
+                    });
                 }
                 break;
             }
