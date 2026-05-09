@@ -224,8 +224,7 @@
         // Wait for dependencies
         await waitFor(() =>
             typeof AssetCache !== 'undefined' &&
-            typeof P2PManager !== 'undefined' &&
-            typeof P2POverlay !== 'undefined'
+            typeof P2PManager !== 'undefined'
         );
 
         // Create P2P manager — give it the ORIGINAL fetch so origin fallback
@@ -240,10 +239,6 @@
         // Install fetch intercept
         installIntercept();
 
-        // Create overlay
-        p2pOverlay = new P2POverlay(p2pManager);
-        window.p2pOverlay = p2pOverlay;
-
         // Connect to signaling server
         if (CONFIG.autoConnect) {
             try {
@@ -251,18 +246,11 @@
                 console.log(`[P2P] ✓ Connected as ${p2pManager.peerId}`);
             } catch (e) {
                 console.warn('[P2P] Failed to connect to signaling server:', e.message);
-                console.warn('[P2P] Running in origin-only mode (overlay still active)');
+                console.warn('[P2P] Running in origin-only mode');
             }
         }
 
-        // Toggle overlay with F2
-        document.addEventListener('keydown', (e) => {
-            if (e.key === CONFIG.toggleKey) {
-                p2pOverlay.toggle();
-            }
-        });
-
-        console.log('[P2P] ✓ Initialization complete — press F2 to toggle overlay');
+        console.log('[P2P] ✓ Initialization complete');
     }
 
     function waitFor(condition, timeout = 10000) {

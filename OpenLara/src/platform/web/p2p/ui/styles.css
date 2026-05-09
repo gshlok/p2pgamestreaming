@@ -1,0 +1,537 @@
+/**
+ * P2P Swarm UI — Design System Stylesheet
+ *
+ * Design tokens, layout grid, and all component styles for the
+ * production-grade HUD overlay that lives on top of the game canvas.
+ *
+ * Architecture:
+ *   • All containers are pointer-events: none by default.
+ *   • Only interactive leaf elements opt in with pointer-events: auto.
+ *   • Uses CSS custom properties for full theming in one place.
+ *   • tabular-nums on every metric value prevents number-jitter.
+ *
+ * Palette (B2B SaaS Dark):
+ *   --clr-bg         : frosted glass background
+ *   --clr-border     : subtle white border
+ *   --clr-text-pri   : Zinc 100
+ *   --clr-text-sec   : Zinc 400
+ *   --clr-peer       : Emerald 500  (P2P)
+ *   --clr-origin     : Blue 500     (HTTP/CDN)
+ *   --clr-warn       : Red 500      (failure)
+ *   --clr-pending    : Amber 500    (streaming)
+ */
+
+/* ─── Google Fonts ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ─── Design Tokens ────────────────────────────────────────────────────────── */
+:root {
+    /* Backgrounds */
+    --clr-bg:           rgba(15, 15, 20, 0.72);
+    --clr-bg-hover:     rgba(15, 15, 20, 0.85);
+    --clr-bg-item:      rgba(255, 255, 255, 0.03);
+    --clr-bg-item-h:    rgba(255, 255, 255, 0.055);
+
+    /* Borders */
+    --clr-border:       rgba(255, 255, 255, 0.08);
+    --clr-border-h:     rgba(255, 255, 255, 0.14);
+
+    /* Text */
+    --clr-text-pri:     #F4F4F5;
+    --clr-text-sec:     #A1A1AA;
+    --clr-text-dim:     #52525B;
+
+    /* Accent — Peer (Emerald 500) */
+    --clr-peer:         #10B981;
+    --clr-peer-glow:    rgba(16, 185, 129, 0.25);
+    --clr-peer-bg:      rgba(16, 185, 129, 0.12);
+
+    /* Accent — Origin/HTTP (Blue 500) */
+    --clr-origin:       #3B82F6;
+    --clr-origin-glow:  rgba(59, 130, 246, 0.25);
+    --clr-origin-bg:    rgba(59, 130, 246, 0.12);
+
+    /* Accent — Cache (Zinc) */
+    --clr-cache:        #71717A;
+    --clr-cache-bg:     rgba(113, 113, 122, 0.15);
+
+    /* Warning / Failure (Red 500) */
+    --clr-warn:         #EF4444;
+    --clr-warn-glow:    rgba(239, 68, 68, 0.25);
+
+    /* Pending / Streaming (Amber 500) */
+    --clr-pending:      #F59E0B;
+    --clr-pending-glow: rgba(245, 158, 11, 0.25);
+
+    /* Upload / Upload (Purple) */
+    --clr-upload:       #A855F7;
+    --clr-upload-bg:    rgba(168, 85, 247, 0.12);
+
+    /* Typography */
+    --font-ui:          'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono:        'JetBrains Mono', 'Roboto Mono', monospace;
+
+    /* Spacing (8px grid) */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+
+    /* Radii */
+    --radius-sm:  6px;
+    --radius-md:  8px;
+    --radius-lg:  12px;
+
+    /* Shadows */
+    --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-glow-peer:   0 0 12px var(--clr-peer-glow);
+    --shadow-glow-origin: 0 0 12px var(--clr-origin-glow);
+
+    /* Transitions */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --duration-fast: 150ms;
+    --duration-med:  250ms;
+    --duration-slow: 400ms;
+}
+
+/* ─── Reset (scoped to the overlay root) ───────────────────────────────────── */
+#arrakis-hud,
+#arrakis-hud * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-variant-numeric: tabular-nums;  /* Prevents number-jitter */
+}
+
+/* ─── HUD Root Container ───────────────────────────────────────────────────── */
+#arrakis-hud {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;          /* Click-through to canvas by default */
+    font-family: var(--font-ui);
+    color: var(--clr-text-pri);
+    /* 8-area layout grid for absolute positioning */
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+        "top-left   top-center   top-right"
+        "mid-left   mid-center   mid-right"
+        "bot-left   bot-center   bot-right";
+}
+
+/* Hide entire HUD in immersive mode */
+#arrakis-hud.immersive {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-slow) var(--ease-out-expo);
+}
+
+/* Hide metrics panels only (keeps controls visible) */
+#arrakis-hud.analytics-hidden .hud-panel {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.97) translateY(-6px);
+    transition: opacity var(--duration-med) ease, transform var(--duration-med) var(--ease-out-expo);
+}
+
+/* ─── Frosted Glass Panel ──────────────────────────────────────────────────── */
+.hud-panel {
+    background: var(--clr-bg);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    opacity: 1;
+    transform: none;
+    transition:
+        opacity var(--duration-med) ease,
+        transform var(--duration-med) var(--ease-out-expo),
+        border-color var(--duration-med) ease;
+    animation: panel-fade-in var(--duration-slow) var(--ease-out-expo) both;
+}
+
+.hud-panel:hover {
+    border-color: var(--clr-border-h);
+}
+
+@keyframes panel-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ─── Panel Positioning ────────────────────────────────────────────────────── */
+#hud-global-metrics {
+    grid-area: top-right;
+    align-self: start;
+    justify-self: end;
+    margin: var(--sp-5);
+    animation-delay: 80ms;
+}
+
+#hud-controls {
+    grid-area: bot-left;
+    align-self: end;
+    justify-self: start;
+    margin: var(--sp-5);
+    animation-delay: 0ms;
+    pointer-events: auto;   /* interactive */
+}
+
+#hud-transfer-feed {
+    grid-area: bot-center;
+    align-self: end;
+    justify-self: center;
+    margin: var(--sp-5);
+    animation-delay: 120ms;
+}
+
+#hud-topology {
+    grid-area: bot-right;
+    align-self: end;
+    justify-self: end;
+    margin: var(--sp-5);
+    animation-delay: 160ms;
+}
+
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+/* Section I: Global Metrics Strip (Top Right)                                 */
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+#hud-global-metrics {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: var(--sp-2) var(--sp-3);
+    min-width: 0;
+}
+
+.metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--sp-2) var(--sp-3);
+    position: relative;
+}
+
+/* Vertical divider between items */
+.metric-item + .metric-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    height: 60%;
+    width: 1px;
+    background: var(--clr-border);
+}
+
+.metric-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--clr-text-dim);
+    white-space: nowrap;
+}
+
+.metric-value {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--clr-text-pri);
+    white-space: nowrap;
+    transition: color var(--duration-fast) ease;
+}
+
+.metric-value.v-peer    { color: var(--clr-peer); }
+.metric-value.v-origin  { color: var(--clr-origin); }
+.metric-value.v-pending { color: var(--clr-pending); }
+.metric-value.v-warn    { color: var(--clr-warn); }
+
+/* Animated number tick */
+@keyframes num-tick {
+    0%  { opacity: 0.4; transform: translateY(3px); }
+    100%{ opacity: 1;   transform: translateY(0); }
+}
+.metric-value.ticked {
+    animation: num-tick 180ms var(--ease-out-expo);
+}
+
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+/* Section II: Active Transfers Feed (Bottom Center)                           */
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+#hud-transfer-feed {
+    width: 340px;
+    padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+
+.feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-2);
+}
+
+.feed-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--clr-text-dim);
+}
+
+.feed-count {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--clr-text-dim);
+}
+
+.feed-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-height: 20px;
+}
+
+/* Individual transfer row */
+.feed-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    grid-template-rows: auto 2px;
+    column-gap: var(--sp-2);
+    row-gap: 5px;
+    padding: 6px var(--sp-2);
+    background: var(--clr-bg-item);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    animation: feed-slide-in var(--duration-med) var(--ease-out-expo) both;
+    pointer-events: none;
+    overflow: hidden;
+    position: relative;
+}
+
+@keyframes feed-slide-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes feed-fade-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateY(-8px) scale(0.96); }
+}
+
+.feed-item.completing {
+    animation: feed-fade-out var(--duration-slow) var(--ease-out-expo) forwards;
+}
+
+.feed-item-top {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.feed-item-bar {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--clr-border);
+    overflow: hidden;
+}
+
+.feed-item-bar-fill {
+    height: 100%;
+    border-radius: 1px;
+    width: 0%;
+    transition: width 200ms linear;
+}
+
+/* Source badge */
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid;
+    flex-shrink: 0;
+    transition: background var(--duration-fast) ease;
+}
+
+.source-badge.peer {
+    color: var(--clr-peer);
+    background: var(--clr-peer-bg);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.source-badge.origin {
+    color: var(--clr-origin);
+    background: var(--clr-origin-bg);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.source-badge.cache {
+    color: var(--clr-cache);
+    background: var(--clr-cache-bg);
+    border-color: rgba(113, 113, 122, 0.3);
+}
+
+.source-badge.done {
+    color: var(--clr-peer);
+    background: var(--clr-peer-bg);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.feed-asset-name {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--clr-text-pri);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.feed-meta {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--clr-text-sec);
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+/* Progress bar colors by source */
+.feed-item[data-source="peer"]   .feed-item-bar-fill { background: var(--clr-peer); }
+.feed-item[data-source="origin"] .feed-item-bar-fill { background: var(--clr-origin); }
+.feed-item[data-source="cache"]  .feed-item-bar-fill { background: var(--clr-cache); }
+
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+/* Section III: Network Topology Visualizer (Bottom Right)                     */
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+#hud-topology {
+    padding: var(--sp-3);
+    width: 216px;
+}
+
+.topology-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-2);
+}
+
+.topology-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--clr-text-dim);
+}
+
+.topology-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--clr-peer);
+    box-shadow: 0 0 6px var(--clr-peer-glow);
+    animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.75); }
+}
+
+#topology-canvas {
+    display: block;
+    width: 192px;
+    height: 192px;
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--clr-border);
+}
+
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+/* Section IV: UI Controls (Bottom Left)                                       */
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+#hud-controls {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-2);
+    padding: var(--sp-2);
+}
+
+.ctrl-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-md);
+    background: var(--clr-bg-item);
+    border: 1px solid var(--clr-border);
+    color: var(--clr-text-sec);
+    cursor: pointer;
+    pointer-events: auto;
+    transition:
+        background var(--duration-fast) ease,
+        border-color var(--duration-fast) ease,
+        color var(--duration-fast) ease,
+        transform var(--duration-fast) ease;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.ctrl-btn:hover {
+    background: var(--clr-bg-item-h);
+    border-color: var(--clr-border-h);
+    color: var(--clr-text-pri);
+    transform: scale(1.06);
+}
+
+.ctrl-btn:active {
+    transform: scale(0.94);
+}
+
+.ctrl-btn.active {
+    border-color: var(--clr-peer);
+    color: var(--clr-peer);
+    background: var(--clr-peer-bg);
+}
+
+.ctrl-btn svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+}
+
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+/* Scrollbar micro-styling                                                      */
+/* ─── ─────────────────────────────────────────────────────────────────────── */
+.feed-list::-webkit-scrollbar {
+    width: 3px;
+}
+.feed-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.feed-list::-webkit-scrollbar-thumb {
+    background: var(--clr-border-h);
+    border-radius: 2px;
+}
