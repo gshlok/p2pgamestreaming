@@ -35,15 +35,14 @@
         toggleKey: 'F2',
 
         // Assets that should NEVER go through P2P (critical startup files)
+        // Source and distribute ALL assets realtime
         excludeFromP2P: [
-            'OpenLara_wasm.data',
-            'OpenLara_wasm.wasm',
-            'OpenLara.wasm',
-            'OpenLara_wasm.js',
-            'OpenLara.js',
-            'chocolate-doom.wasm',
-            'chocolate-doom.js'
-        ]
+            // Only exclude signaling and core p2p scripts to prevent infinite loops
+            'socket.io',
+            'p2p/',
+            'server.js',
+            'favicon.ico'
+        ],
     };
 
     // -----------------------------------------------------------------------
@@ -184,6 +183,14 @@
             /\.RPL$/i,
             /\.data$/i,
             /\.wad$/i,
+            /\.wasm$/i,
+            /\.js$/i,
+            /\.mem$/i,
+            /\.png$/i,
+            /\.jpg$/i,
+            /\.json$/i,
+            /\.mp3$/i,
+            /\.ogg$/i,
             /\.pk3$/i,
             /\.lmp$/i
         ];

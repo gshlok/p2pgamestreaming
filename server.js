@@ -66,6 +66,10 @@ app.use(express.static(WEB_ROOT, {
         res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
         // Cache-control: no caching during dev
         res.setHeader('Cache-Control', 'no-store');
+
+        if (filePath.endsWith('.wasm')) {
+            res.type('application/wasm');
+        }
     }
 }));
 

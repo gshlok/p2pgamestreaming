@@ -619,10 +619,16 @@
     <!-- Hidden compatibility status label -->
     <div id="status" style="display:none; pointer-events:none; position:absolute; opacity:0;">Starting...</div>
 
+    <!-- P2P Asset Streaming Layer - loaded BEFORE WASM engine -->
+    <script src="p2p/AssetCache.js"></script>
+    <script src="p2p/P2PManager.js"></script>
+    <script src="p2p/P2POverlay.js"></script>
+    <script src="p2p/p2p-bootstrap.js"></script>
+
     <script>
         indexedDB.deleteDatabase('OpenLara');
         var statusElement = document.getElementById('status');
-        var canvasElement = document.getElementById('canvas');
+        var canvasElement = null;
         var proc;
 
         function fullscreen(container) {
@@ -635,15 +641,32 @@
 
         window.onload = function() { window.focus(); }
         
-        var Module;
+        var Module = {};
         function startOpenLara() {
-            document.getElementById('launcher-menu').style.display = 'none';
-            document.querySelector('.level-deck').style.display = 'flex';
-            canvasElement = document.getElementById('canvas-openlara');
+            const launcher = document.getElementById('launcher-menu');
+            if (launcher) launcher.style.display = 'none';
+            
+            const levelDeck = document.querySelector('.level-deck');
+            if (levelDeck) levelDeck.style.display = 'flex';
+            
+            // 1. Manage Canvases Robustly
+            // Hide everything else
+            document.querySelectorAll('canvas.game').forEach(c => {
+                c.style.display = 'none';
+                if (c.id === 'canvas') c.id = 'canvas-inactive';
+            });
+
+            canvasElement = document.getElementById('canvas-openlara') || document.querySelector('canvas[id*="openlara"]');
+            if (!canvasElement) {
+                console.error("Critical: OpenLara canvas not found!");
+                return;
+            }
+            canvasElement.id = 'canvas'; 
             canvasElement.style.display = 'block';
 
+            // 2. Initialize Module
             Module = {
-            TOTAL_MEMORY: 192*1024*1024,
+                TOTAL_MEMORY: 192*1024*1024,
             preRun: [],
             postRun: [],
             engineBooted: false,
@@ -802,74 +825,90 @@
         window.addEventListener('touchstart', userAction, false);
         window.addEventListener('click', userAction, false);
 
-        Module.setStatus('Downloading...');
+        // Initial status will be set when game starts
+        // Module.setStatus('Downloading...');
         window.onerror = function(event) {
             Module.setStatus('Exception thrown, see JavaScript console');
             Module.setStatus = function(text) {
                 if (text) Module.printErr('[post-exception status] ' + text);
             };
         };
-    </script>
 
-    <!-- P2P Asset Streaming Layer - loaded BEFORE WASM engine -->
-    <script src="p2p/AssetCache.js"></script>
-    <script src="p2p/P2PManager.js"></script>
-    <script src="p2p/P2POverlay.js"></script>
-    <script src="p2p/p2p-bootstrap.js"></script>
-
-    <script>
-            var script = document.createElement('script');
-
-            if ('WebAssembly' in window) {
-                console.log("Start WebAssembly!");
-                script.src = "OpenLara_wasm.js";
-            } else {
-                console.log("Start asm.js!");
-                script.src = "OpenLara.js";
-                (function() {
-                    var memoryInitializer = 'OpenLara.js.mem';
-                    if (typeof Module['locateFile'] === 'function') {
-                        memoryInitializer = Module['locateFile'](memoryInitializer);
-                    } else if (Module['memoryInitializerPrefixURL']) {
-                        memoryInitializer = Module['memoryInitializerPrefixURL'] + memoryInitializer;
-                    }
-                    var xhr = Module['memoryInitializerRequest'] = new XMLHttpRequest();
-                    xhr.open('GET', memoryInitializer, true);
-                    xhr.responseType = 'arraybuffer';
-                    xhr.send(null);
-                })();
-            }
-
-            document.body.appendChild(script);
+            // 3. Load Engine via P2P-aware Fetch
+            const engineFile = 'OpenLara_wasm.js';
+            console.log(`[Launcher] Bootstrapping ${engineFile} via P2P...`);
+            
+            fetch(engineFile)
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status} loading engine`);
+                    return response.text();
+                })
+                .then(code => {
+                    console.log(`[Launcher] Engine code received (${(code.length/1024).toFixed(1)}KB), executing...`);
+                    const script = document.createElement('script');
+                    script.textContent = code;
+                    document.body.appendChild(script);
+                })
+                .catch(err => {
+                    console.error("[Launcher] Failed to boot engine:", err);
+                    Module.setStatus(`BOOT FAILURE: ${err.message}`);
+                });
         }
 
         function startDoom() {
-            document.getElementById('launcher-menu').style.display = 'none';
-            document.querySelector('.level-deck').style.display = 'none';
+            const launcher = document.getElementById('launcher-menu');
+            if (launcher) launcher.style.display = 'none';
+            
+            const levelDeck = document.querySelector('.level-deck');
+            if (levelDeck) levelDeck.style.display = 'none';
+            
             const loadingOverlay = document.getElementById('loading-overlay');
-            if (loadingOverlay) loadingOverlay.style.display = 'none'; // Doom has no overlay
+            if (loadingOverlay) loadingOverlay.style.display = 'none';
 
-            canvasElement = document.getElementById('canvas-doom');
+            // 1. Manage Canvases Robustly
+            document.querySelectorAll('canvas.game').forEach(c => {
+                c.style.display = 'none';
+                if (c.id === 'canvas') c.id = 'canvas-inactive';
+            });
+
+            canvasElement = document.getElementById('canvas-doom') || document.querySelector('canvas[id*="doom"]');
+            if (!canvasElement) {
+                console.error("Critical: Doom canvas not found!");
+                return;
+            }
+            canvasElement.id = 'canvas';
             canvasElement.style.display = 'block';
 
-            window.Module = {
+            Module = {
                 canvas: canvasElement,
-                print: function(text) {
-                    console.log("DOOM: " + text);
+                arguments: ["-iwad", "doom1.wad", "-window"],
+                locateFile: function(path) {
+                    if (path.endsWith('.wasm') || path.endsWith('.data')) {
+                        return 'doom/' + path;
+                    }
+                    return path;
                 },
-                printErr: function(text) {
-                    console.error("DOOM: " + text);
-                }
+                print: function(text) { console.log("DOOM: " + text); },
+                printErr: function(text) { console.error("DOOM: " + text); },
+                setStatus: function(text) { console.log("DOOM Status: " + text); }
             };
+            window.Module = Module;
 
-            var script = document.createElement('script');
-            script.src = "doom/chocolate-doom.js";
-            document.body.appendChild(script);
+            // 2. Load Doom via P2P-aware Fetch
+            const doomEngine = 'doom/chocolate-doom.js';
+            fetch(doomEngine)
+                .then(r => r.text())
+                .then(code => {
+                    const script = document.createElement('script');
+                    script.textContent = code;
+                    document.body.appendChild(script);
+                })
+                .catch(err => console.error("Doom Boot Fail:", err));
         }
 
         var isMobile = !!navigator.platform && (/iPad|iPhone|iPod/.test(navigator.platform) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
-        if (isMobile) {
+        if (isMobile && canvasElement) {
             canvasElement.className = "game_fs";
             const loadingOverlay = document.getElementById('loading-overlay');
             if (loadingOverlay) loadingOverlay.style.display = 'none';
@@ -883,6 +922,11 @@
             btn.innerHTML = 'LOADING... ⚡';
             btn.style.opacity = '0.7';
             btn.style.pointerEvents = 'none';
+
+            if (!Module || !Module.ccall || !window.GLctx) {
+                alert("Engine not ready! Please wait for the game to boot.");
+                return;
+            }
 
             try {
                 const response = await fetch(`/levels/${levelPath}`);
