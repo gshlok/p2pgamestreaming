@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>OpenLara — P2P Swarm Streaming Terminal</title>
+    <title>OpenLara — Game Asset Streaming Demo</title>
     <link href="favicon.ico" rel="shortcut icon" type="image/x-icon" />
     <meta charset="utf-8">
     <meta name="mobile-web-app-capable" content="yes">
@@ -504,6 +504,37 @@
             opacity: 0;
             display: none;
         }
+
+        /* --- Mode-specific theming --- */
+        .mode-cloud .hud-badge { background: rgba(255,107,53,0.1); color: #ff6b35; border-color: rgba(255,107,53,0.2); }
+        .mode-cloud .hud-logo span { color: #ff6b35; text-shadow: 0 0 10px rgba(255,107,53,0.4); }
+        .mode-cloud .btn-engage { background: linear-gradient(135deg, #cc5522, #ff6b35); border-color: rgba(255,107,53,0.3); box-shadow: 0 4px 15px rgba(255,107,53,0.25); }
+        .mode-cloud .btn-engage:hover { background: linear-gradient(135deg, #dd6633, #ff7744); box-shadow: 0 6px 22px rgba(255,107,53,0.4); }
+        .mode-cloud .loading-progress-fill { background: linear-gradient(90deg, #cc5522, #ff6b35); box-shadow: 0 0 10px #ff6b35; }
+        .mode-cloud .pulse-logo { color: #ff6b35; text-shadow: 0 0 12px rgba(255,107,53,0.6); }
+
+        .btn-mode-toggle {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #d1d5db;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+        }
+        .btn-mode-toggle:hover { transform: translateY(-1px); }
+        .mode-p2p .btn-mode-toggle { border-color: rgba(255,107,53,0.2); color: #ff6b35; }
+        .mode-p2p .btn-mode-toggle:hover { background: rgba(255,107,53,0.08); border-color: rgba(255,107,53,0.35); }
+        .mode-cloud .btn-mode-toggle { border-color: rgba(0,240,255,0.2); color: #00f0ff; }
+        .mode-cloud .btn-mode-toggle:hover { background: rgba(0,240,255,0.08); border-color: rgba(0,240,255,0.35); }
     </style>
 </head>
 <body>
@@ -515,8 +546,9 @@
         <!-- Navbar HUD -->
         <header class="hud-header">
             <div class="hud-branding">
-                <div class="hud-logo">LARA<span>//</span>SWARM</div>
-                <div class="hud-badge">P2P Core v1.4</div>
+                <div class="hud-logo" id="hud-logo">LARA<span>//</span>SWARM</div>
+                <div class="hud-badge" id="hud-mode-badge">🔗 P2P Swarm v1.4</div>
+                <button class="btn-mode-toggle" id="btn-mode-toggle" title="Switch streaming mode">☁️ Switch to Cloud</button>
             </div>
             <div class="hud-telemetry">
                 <div class="telemetry-item">
@@ -611,6 +643,35 @@
 
     <script>
         indexedDB.deleteDatabase('OpenLara');
+
+        // --- Mode Detection & UI theming ---
+        (function applyMode() {
+            var params = new URLSearchParams(window.location.search);
+            var mode = params.get('mode') || 'p2p';
+            document.body.classList.add('mode-' + mode);
+
+            var logo = document.getElementById('hud-logo');
+            var badge = document.getElementById('hud-mode-badge');
+            var toggle = document.getElementById('btn-mode-toggle');
+
+            if (mode === 'cloud') {
+                if (logo) logo.innerHTML = 'LARA<span>//</span>CLOUD';
+                if (badge) badge.textContent = '☁️ Cloud Streaming';
+                if (toggle) toggle.innerHTML = '🔗 Switch to P2P';
+            } else {
+                if (logo) logo.innerHTML = 'LARA<span>//</span>SWARM';
+                if (badge) badge.textContent = '🔗 P2P Swarm v1.4';
+                if (toggle) toggle.innerHTML = '☁️ Switch to Cloud';
+            }
+
+            if (toggle) {
+                toggle.addEventListener('click', function() {
+                    var newMode = mode === 'p2p' ? 'cloud' : 'p2p';
+                    window.location.href = window.location.pathname + '?mode=' + newMode;
+                });
+            }
+        })();
+
         var statusElement = document.getElementById('status');
         var canvasElement = document.getElementById('canvas');
         var proc;

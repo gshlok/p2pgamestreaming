@@ -20,6 +20,31 @@
     'use strict';
 
     // -----------------------------------------------------------------------
+    // Mode detection — ?mode=cloud disables all P2P functionality
+    // -----------------------------------------------------------------------
+    const urlParams = new URLSearchParams(window.location.search);
+    const streamingMode = urlParams.get('mode') || 'p2p';
+    window.__streamingMode = streamingMode;
+
+    if (streamingMode === 'cloud') {
+        console.log('[P2P] ☁️  CLOUD MODE — P2P layer disabled. All assets will load from origin.');
+        // Expose a stub so the HUD doesn't crash
+        window.p2pManager = {
+            isConnected: () => false,
+            getMetrics: () => ({
+                peersConnected: 0, fromPeers: 0, fromOrigin: 0,
+                peerPercent: 0, originPercent: 100,
+                bytesFromPeers: 0, bytesFromOrigin: 0, bytesSaved: 0,
+                bytesUploaded: 0, uploadsCount: 0, totalTransfers: 0,
+                recentTransfers: [], localAssetCount: 0, uptime: 0
+            })
+        };
+        return; // Exit immediately — no fetch wrapping, no WebSocket, nothing
+    }
+
+    console.log('[P2P] 🔗 P2P MODE — Peer-assisted asset streaming enabled.');
+
+    // -----------------------------------------------------------------------
     // Save the REAL fetch IMMEDIATELY, before anything else runs
     // -----------------------------------------------------------------------
     const _originalFetch = window.fetch.bind(window);
