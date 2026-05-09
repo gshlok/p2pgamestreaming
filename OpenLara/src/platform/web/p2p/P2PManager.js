@@ -15,7 +15,7 @@ class P2PManager {
     constructor(options = {}) {
         this.peerId = options.peerId || 'peer_' + Math.random().toString(36).substr(2, 8);
         this.signalingUrl = options.signalingUrl || this._autoDetectSignalingUrl();
-        this.peerTimeout = options.peerTimeout || 2500;  // ms to wait for peer response before origin fallback
+        this.peerTimeout = options.peerTimeout || 5000;  // ms to wait for peer response before origin fallback (increased from 2500)
 
         // CRITICAL: Use the original fetch for origin fallback to avoid
         // infinite recursion with the bootstrap's fetch wrapper.
@@ -54,6 +54,9 @@ class P2PManager {
         this._incomingChunks = new Map();  // Map<assetName, { chunks: [], totalSize, received }>
 
         this._heartbeatTimer = null;
+
+        // Track peers we are eagerly connecting to (to avoid duplicate offers)
+        this._connectingPeers = new Set();
     }
 
     _autoDetectSignalingUrl() {
@@ -156,6 +159,11 @@ class P2PManager {
                 }
                 console.log(`[P2P] Peer list: ${this.peers.size} peers`);
                 if (this.onPeerListChanged) this.onPeerListChanged(this._getPeerSummary());
+
+                // EAGERLY pre-establish DataChannels with all known peers
+                for (const peer of msg.peers) {
+                    this._eagerConnect(peer.peerId);
+                }
                 break;
 
             case 'peer-joined':
@@ -165,10 +173,14 @@ class P2PManager {
                 });
                 console.log(`[P2P] Peer joined: ${msg.peer.peerId} (${this.peers.size} total)`);
                 if (this.onPeerListChanged) this.onPeerListChanged(this._getPeerSummary());
+
+                // EAGERLY pre-establish DataChannel with new peer
+                this._eagerConnect(msg.peer.peerId);
                 break;
 
             case 'peer-left':
                 this.peers.delete(msg.peerId);
+                this._connectingPeers.delete(msg.peerId);
                 this.peerConnections.get(msg.peerId)?.close();
                 this.peerConnections.delete(msg.peerId);
                 this.dataChannels.delete(msg.peerId);
@@ -179,6 +191,7 @@ class P2PManager {
             case 'asset-update':
                 if (this.peers.has(msg.peerId)) {
                     this.peers.get(msg.peerId).assets = new Set(msg.assets || []);
+                    console.log(`[P2P] Peer ${msg.peerId} now has ${msg.assets.length} assets`);
                 }
                 break;
 
@@ -195,10 +208,54 @@ class P2PManager {
                 this._handleRTCIce(msg.from, msg.signal);
                 break;
 
-            // Incoming asset request from another peer
+            // Incoming asset request from another peer (via signaling)
             case 'asset-request':
                 this._handleAssetRequest(msg.from, msg.assetName);
                 break;
+
+            // WebSocket relay: another peer is sending us asset data through the server
+            case 'ws-relay-asset':
+                this._handleWSRelayedAsset(msg.from, msg.assetName, msg.data, msg.hash);
+                break;
+        }
+    }
+
+    /**
+     * Eagerly establish a WebRTC DataChannel with a peer so it's ready
+     * before any asset requests need it. This eliminates the 2-5s setup
+     * delay that was causing all P2P fetches to timeout.
+     */
+    async _eagerConnect(remotePeerId) {
+        // Skip if already connected or connecting
+        if (this.dataChannels.has(remotePeerId) && this.dataChannels.get(remotePeerId).readyState === 'open') {
+            console.log(`[P2P] Already have open DataChannel to ${remotePeerId}, skipping eager connect`);
+            return;
+        }
+        if (this._connectingPeers.has(remotePeerId)) {
+            return;
+        }
+
+        // Clean up any stale PeerConnection that's stuck in 'new' or 'failed' state
+        const existingPC = this.peerConnections.get(remotePeerId);
+        if (existingPC) {
+            const state = existingPC.connectionState || existingPC.iceConnectionState;
+            if (state === 'new' || state === 'failed' || state === 'disconnected' || state === 'closed') {
+                console.log(`[P2P] Cleaning up stale PeerConnection to ${remotePeerId} (state: ${state})`);
+                existingPC.close();
+                this.peerConnections.delete(remotePeerId);
+                this.dataChannels.delete(remotePeerId);
+            }
+        }
+
+        this._connectingPeers.add(remotePeerId);
+        console.log(`[P2P] Eagerly connecting to ${remotePeerId}...`);
+
+        try {
+            await this._createOfferTo(remotePeerId, '__eager_connect__');
+        } catch (e) {
+            console.warn(`[P2P] Eager connect to ${remotePeerId} failed:`, e.message);
+        } finally {
+            this._connectingPeers.delete(remotePeerId);
         }
     }
 
@@ -207,8 +264,14 @@ class P2PManager {
     // -----------------------------------------------------------------------
 
     _createPeerConnection(remotePeerId) {
-        if (this.peerConnections.has(remotePeerId)) {
-            return this.peerConnections.get(remotePeerId);
+        const existing = this.peerConnections.get(remotePeerId);
+        if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+            return existing;
+        }
+        // Clean up if closed/failed
+        if (existing) {
+            existing.close();
+            this.peerConnections.delete(remotePeerId);
         }
 
         const config = {
@@ -417,28 +480,55 @@ class P2PManager {
     // -----------------------------------------------------------------------
 
     async _handleAssetRequest(fromPeerId, assetName) {
-        if (!this.localAssets.has(assetName)) return;
-
-        // Ensure we have a DataChannel to this peer
-        if (!this.dataChannels.has(fromPeerId) || this.dataChannels.get(fromPeerId).readyState !== 'open') {
-            // Need to establish connection first
-            await this._createOfferTo(fromPeerId, assetName);
-
-            // Wait for channel to open
-            await new Promise((resolve) => {
-                const check = setInterval(() => {
-                    const ch = this.dataChannels.get(fromPeerId);
-                    if (ch && ch.readyState === 'open') {
-                        clearInterval(check);
-                        resolve();
-                    }
-                }, 100);
-                // Timeout after 5s
-                setTimeout(() => { clearInterval(check); resolve(); }, 5000);
-            });
+        if (!this.localAssets.has(assetName)) {
+            console.log(`[P2P] Peer ${fromPeerId} requested ${assetName} but we don't have it`);
+            return;
         }
 
-        this._serveAsset(fromPeerId, assetName);
+        console.log(`[P2P] Peer ${fromPeerId} requesting ${assetName} from us`);
+
+        // Try to serve via DataChannel first (fastest)
+        const channel = this.dataChannels.get(fromPeerId);
+        if (channel && channel.readyState === 'open') {
+            this._serveAsset(fromPeerId, assetName);
+            return;
+        }
+
+        // DataChannel not ready — relay via WebSocket (signaling server)
+        console.log(`[P2P] No DataChannel to ${fromPeerId}, relaying ${assetName} via WS`);
+        await this._serveAssetViaWS(fromPeerId, assetName);
+    }
+
+    /**
+     * Serve an asset to a peer through the WebSocket signaling server.
+     * Used when no DataChannel is available (fallback path).
+     * Encodes asset as base64 since WebSocket text frames can't carry binary.
+     */
+    async _serveAssetViaWS(toPeerId, assetName) {
+        const cached = await this.cache.get(assetName);
+        if (!cached) {
+            console.warn(`[P2P] Cannot relay ${assetName} — not in cache`);
+            return;
+        }
+
+        // Convert Uint8Array to base64 for WebSocket text transport
+        let binary = '';
+        const bytes = cached.data;
+        for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        console.log(`[P2P] Relaying ${assetName} (${(cached.size / 1024).toFixed(1)}KB) to ${toPeerId} via WS`);
+
+        this._send({
+            type: 'ws-relay-asset',
+            to: toPeerId,
+            assetName,
+            data: base64,
+            hash: cached.hash,
+            size: cached.size
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -479,59 +569,69 @@ class P2PManager {
             return { data: cached.data, source: 'cache' };
         }
 
-        // 2. Find peers who have this asset
-        const peersWithAsset = [];
-        for (const [peerId, peer] of this.peers) {
-            if (peer.assets.has(assetName)) {
-                peersWithAsset.push(peerId);
-            }
-        }
-
-        // 3. Try to get from a peer
-        if (peersWithAsset.length > 0) {
-            try {
-                const result = await this._fetchFromPeer(assetName, peersWithAsset);
-                if (result) {
-                    // Verify integrity if we have a known hash
-                    const knownHash = this.assetHashes.get(assetName);
-                    if (knownHash && result.hash !== knownHash) {
-                        console.warn(`[P2P] Hash mismatch for ${assetName}! Falling back to origin.`);
-                    } else {
-                        // Cache it
-                        const cacheEntry = await this.cache.put(assetName, result.data, 'peer');
-                        this.localAssets.add(assetName);
-                        this.assetHashes.set(assetName, cacheEntry.hash);
-
-                        // Announce to other peers
-                        this.announceAsset(assetName);
-
-                        const duration = Date.now() - startTime;
-                        this._recordTransfer(assetName, 'peer', result.peerId, result.data.length, duration);
-                        return { data: result.data, source: 'peer', peerId: result.peerId };
-                    }
+        // 2. Find peers who have this asset (only if connected)
+        if (this.isConnected()) {
+            const peersWithAsset = [];
+            for (const [peerId, peer] of this.peers) {
+                if (peer.assets.has(assetName)) {
+                    peersWithAsset.push(peerId);
                 }
-            } catch (e) {
-                console.warn(`[P2P] Peer fetch failed for ${assetName}:`, e.message);
+            }
+
+            console.log(`[P2P] Asset ${assetName}: ${peersWithAsset.length} peers have it [${peersWithAsset.join(', ')}]`);
+
+            // 3. Try to get from a peer
+            if (peersWithAsset.length > 0) {
+                try {
+                    const result = await this._fetchFromPeer(assetName, peersWithAsset);
+                    if (result) {
+                        // Verify integrity if we have a known hash
+                        const knownHash = this.assetHashes.get(assetName);
+                        if (knownHash && result.hash !== knownHash) {
+                            console.warn(`[P2P] Hash mismatch for ${assetName}! Falling back to origin.`);
+                        } else {
+                            // Cache it
+                            const cacheEntry = await this.cache.put(assetName, result.data, 'peer');
+                            this.localAssets.add(assetName);
+                            this.assetHashes.set(assetName, cacheEntry.hash);
+
+                            // Announce to other peers
+                            this.announceAsset(assetName);
+
+                            const duration = Date.now() - startTime;
+                            this._recordTransfer(assetName, 'peer', result.peerId, result.data.length, duration);
+                            return { data: result.data, source: 'peer', peerId: result.peerId };
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[P2P] Peer fetch failed for ${assetName}:`, e.message);
+                }
             }
         }
 
         // 4. Fallback to origin
+        console.log(`[P2P] Fetching from origin: ${assetName}`);
+        const data = await this._fetchFromOrigin(assetName);
+
+        // _fetchFromOrigin returns null on non-200 (e.g., 404)
+        if (!data) {
+            console.log(`[P2P] Origin returned no data for ${assetName} (404?)`);
+            return null;  // Return null — bootstrap will pass through to original fetch
+        }
+
+        // Cache it and announce
         try {
-            const data = await this._fetchFromOrigin(assetName);
             const cacheEntry = await this.cache.put(assetName, data, 'origin');
             this.localAssets.add(assetName);
             this.assetHashes.set(assetName, cacheEntry.hash);
-
-            // Announce to other peers
             this.announceAsset(assetName);
-
-            const duration = Date.now() - startTime;
-            this._recordTransfer(assetName, 'origin', null, data.length, duration);
-            return { data, source: 'origin' };
         } catch (e) {
-            console.error(`[P2P] Origin fetch also failed for ${assetName}:`, e.message);
-            throw e;
+            console.warn(`[P2P] Cache/announce failed for ${assetName}:`, e.message);
         }
+
+        const duration = Date.now() - startTime;
+        this._recordTransfer(assetName, 'origin', null, data.length, duration);
+        return { data, source: 'origin' };
     }
 
     /**
@@ -544,35 +644,42 @@ class P2PManager {
                 // Check if we already have an open channel
                 let channel = this.dataChannels.get(peerId);
 
+                if (channel && channel.readyState === 'open') {
+                    // DataChannel is ready — use the fast path
+                    console.log(`[P2P] Requesting ${assetName} from ${peerId} via DataChannel`);
+                    return await this._requestViaDataChannel(channel, peerId, assetName);
+                }
+
+                // DataChannel not ready — try WebSocket relay as fallback
+                console.log(`[P2P] No open DataChannel to ${peerId}, trying WS relay for ${assetName}`);
+                const relayResult = await this._requestViaWSRelay(peerId, assetName);
+                if (relayResult) return relayResult;
+
+                // If WS relay also didn't work, try establishing DataChannel
+                // (for future requests — this one might timeout)
                 if (!channel || channel.readyState !== 'open') {
-                    // Establish connection
                     await this._createOfferTo(peerId, assetName);
 
                     // Wait for channel to open (with timeout)
-                    channel = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => reject(new Error('Channel open timeout')), 5000);
-                        const check = setInterval(() => {
-                            const ch = this.dataChannels.get(peerId);
-                            if (ch && ch.readyState === 'open') {
-                                clearInterval(check);
-                                clearTimeout(timeout);
-                                resolve(ch);
-                            }
-                        }, 50);
-                    });
+                    try {
+                        channel = await new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => reject(new Error('Channel open timeout')), 5000);
+                            const check = setInterval(() => {
+                                const ch = this.dataChannels.get(peerId);
+                                if (ch && ch.readyState === 'open') {
+                                    clearInterval(check);
+                                    clearTimeout(timeout);
+                                    resolve(ch);
+                                }
+                            }, 50);
+                        });
+                    } catch (e) {
+                        console.warn(`[P2P] DataChannel to ${peerId} didn't open in time`);
+                        continue;
+                    }
+
+                    return await this._requestViaDataChannel(channel, peerId, assetName);
                 }
-
-                // Send request and wait for response
-                return await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        this.pendingRequests.delete(assetName);
-                        reject(new Error(`Peer ${peerId} timeout`));
-                    }, this.peerTimeout);
-
-                    this.pendingRequests.set(assetName, { resolve, reject, timeout });
-
-                    channel.send(JSON.stringify({ type: 'request', assetName }));
-                });
             } catch (e) {
                 console.warn(`[P2P] Failed to fetch ${assetName} from ${peerId}:`, e.message);
                 continue;
@@ -582,21 +689,110 @@ class P2PManager {
     }
 
     /**
+     * Request asset via an open DataChannel
+     */
+    _requestViaDataChannel(channel, peerId, assetName) {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.pendingRequests.delete(assetName);
+                reject(new Error(`Peer ${peerId} timeout via DataChannel`));
+            }, this.peerTimeout);
+
+            this.pendingRequests.set(assetName, { resolve, reject, timeout });
+            channel.send(JSON.stringify({ type: 'request', assetName }));
+        });
+    }
+
+    /**
+     * Request asset via WebSocket relay (signaling server proxies the request)
+     * This is the fallback when DataChannel isn't established yet.
+     */
+    _requestViaWSRelay(peerId, assetName) {
+        if (!this.isConnected()) return Promise.resolve(null);
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.pendingRequests.delete(assetName);
+                console.log(`[P2P] WS relay timeout for ${assetName} from ${peerId}`);
+                resolve(null);  // Resolve null (not reject) to allow fallback to origin
+            }, this.peerTimeout);
+
+            this.pendingRequests.set(assetName, { resolve, reject, timeout });
+
+            // Ask the signaling server to relay our request to the peer
+            this._send({
+                type: 'asset-request',
+                to: peerId,
+                assetName
+            });
+        });
+    }
+
+    /**
+     * Handle an asset relayed through the WebSocket signaling server
+     */
+    _handleWSRelayedAsset(fromPeerId, assetName, base64Data, hash) {
+        const pending = this.pendingRequests.get(assetName);
+        if (!pending) {
+            console.warn(`[P2P] Received WS-relayed asset ${assetName} but no pending request`);
+            return;
+        }
+
+        try {
+            // Decode base64 to Uint8Array
+            const binaryString = atob(base64Data);
+            const data = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                data[i] = binaryString.charCodeAt(i);
+            }
+
+            clearTimeout(pending.timeout);
+            console.log(`[P2P] Received ${assetName} (${(data.length / 1024).toFixed(1)}KB) from ${fromPeerId} via WS relay`);
+            pending.resolve({
+                data,
+                source: 'peer',
+                peerId: fromPeerId,
+                hash,
+                duration: 0
+            });
+            this.pendingRequests.delete(assetName);
+        } catch (e) {
+            console.error(`[P2P] Error decoding WS-relayed asset:`, e);
+            clearTimeout(pending.timeout);
+            pending.resolve(null);
+            this.pendingRequests.delete(assetName);
+        }
+    }
+
+    /**
      * Fetch from origin server (normal HTTP)
      * Uses _originalFetch to bypass the bootstrap's fetch wrapper
      * and avoid infinite recursion.
      */
     async _fetchFromOrigin(assetName) {
         // Register this URL so the bootstrap wrapper lets it pass through
-        // even if _originalFetch somehow routes back through window.fetch
+        // even if _originalFetch somehow routes back through window.fetch.
+        // We need to register BOTH the normalized path AND the /path version.
+        const withSlash = '/' + assetName;
         this._originFetchesInFlight.add(assetName);
+        this._originFetchesInFlight.add(withSlash);
         try {
-            const response = await this._originalFetch(assetName, { credentials: 'same-origin' });
-            if (!response.ok) throw new Error(`HTTP ${response.status}: ${assetName}`);
+            // Use the version with leading slash for the actual HTTP request
+            const response = await this._originalFetch(withSlash, { credentials: 'same-origin' });
+            if (!response.ok) {
+                // Return null instead of throwing — 404s are normal for some
+                // game assets (e.g., AZTECLOA.PNG embedded in .data package)
+                console.log(`[P2P] Origin HTTP ${response.status} for ${assetName}`);
+                return null;
+            }
             const buffer = await response.arrayBuffer();
             return new Uint8Array(buffer);
+        } catch (e) {
+            console.warn(`[P2P] Origin fetch error for ${assetName}:`, e.message);
+            return null;
         } finally {
             this._originFetchesInFlight.delete(assetName);
+            this._originFetchesInFlight.delete(withSlash);
         }
     }
 
@@ -606,11 +802,14 @@ class P2PManager {
     announceAsset(assetName) {
         this.localAssets.add(assetName);
         if (this.isConnected()) {
+            console.log(`[P2P] Announcing asset: ${assetName} (total: ${this.localAssets.size})`);
             this._send({
                 type: 'asset-announce',
                 peerId: this.peerId,
                 assets: [assetName]
             });
+        } else {
+            console.log(`[P2P] Queued asset locally (not connected yet): ${assetName}`);
         }
     }
 
