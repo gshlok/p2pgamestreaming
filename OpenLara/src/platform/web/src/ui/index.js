@@ -128,6 +128,7 @@ export class StreamingUI {
 
   updateAllMetrics() {
     const data = this.p2p.getMetrics();
+    console.log('[UI Metrics Update] data:', JSON.stringify(data));
     
     // Top-right strip (Peers active, source distribution)
     this.p2pMetrics.update({

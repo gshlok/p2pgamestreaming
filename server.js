@@ -34,7 +34,7 @@ const HEARTBEAT_INTERVAL = 5000;   // ms between heartbeat checks
 const PEER_TIMEOUT = 15000;        // ms before peer is considered dead
 
 // Asset file extensions that get throttled (to make P2P visibly faster)
-const THROTTLED_EXTENSIONS = ['.PSX', '.PHD', '.TR2', '.TR4', '.SFX', '.ogg', '.mp3', '.wav', '.PNG', '.RAW', '.BMP'];
+const THROTTLED_EXTENSIONS = ['.PSX', '.PHD', '.TR2', '.TR4', '.SFX'];
 
 const WEB_ROOT = __dirname;
 

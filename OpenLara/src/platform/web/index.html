@@ -25,7 +25,12 @@
                 console.log('Engine Status:', text);
                 if (window.parent && window.parent.onEngineStatus) window.parent.onEngineStatus(text);
             },
-            print: console.log,
+            print: function(text) {
+                console.log(text);
+                if (window.parent && window.parent.ui && window.parent.ui.onGameLog) {
+                    window.parent.ui.onGameLog(text);
+                }
+            },
             printErr: console.error,
             monitorRunDependencies: function(left) {
                 this.setStatus(left ? 'Loading Assets...' : 'Booting Engine');
