@@ -73,9 +73,6 @@ if (THROTTLE_ENABLED) {
 // Serve the OpenLara web build
 app.use(express.static(WEB_ROOT, {
     setHeaders: (res, filePath) => {
-        // CORS headers for cross-origin isolation (needed for SharedArrayBuffer in some configs)
-        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
         // Cache-control: no caching during dev
         res.setHeader('Cache-Control', 'no-store');
     }
@@ -85,11 +82,18 @@ app.use(express.static(WEB_ROOT, {
 const LEVELS_ROOT = path.join(__dirname, 'Tomb-Raider-1-2-3-4-5-Map-viewer-and-levels');
 app.use('/levels', express.static(LEVELS_ROOT, {
     setHeaders: (res, filePath) => {
-        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
         res.setHeader('Cache-Control', 'no-store');
     }
 }));
+
+// Fallback interceptor for missing optional OpenLara assets (CD audio tracks and missing loading screens)
+// This prevents 404 errors in the console while allowing the game to proceed.
+app.use((req, res, next) => {
+    if (req.path.endsWith('.ogg') || req.path.endsWith('.PNG')) {
+        return res.status(204).end(); // 204 No Content
+    }
+    next();
+});
 
 const server = http.createServer(app);
 

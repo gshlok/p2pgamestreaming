@@ -12,7 +12,7 @@
 <body>
     <canvas id="canvas" tabindex="1" style="outline: none;" oncontextmenu="event.preventDefault()"></canvas>
 
-    <script src="../../../../../p2p-bootstrap.js"></script>
+    <script src="../../../../p2p-bootstrap.js"></script>
 
     <script>
         var canvasElement = document.getElementById('canvas');
@@ -43,7 +43,7 @@
             var proc = audioContext.createScriptProcessor(count, 2, 2);
             proc.onaudioprocess = function(e) {
                 var L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
-                Module.ccall('snd_fill', 'null', ['number', 'number'], [frames, framesCount]);
+                Module._snd_fill(frames, framesCount);
                 for (var i = 0; i < count; i++) {
                     var index = frames + Math.floor(i * rate) * 4;
                     L[i] = Module.getValue(index, 'i16') / 0x8000;
@@ -90,7 +90,7 @@
             else if (lang == "zh") id = 12;
             else if (lang == "hu") id = 13;
             else if (lang == "sv") id = 14;
-            Module.ccall('set_def_lang', 'null', ['number'], [id]);
+            Module._set_def_lang(id);
         }
 
         var script = document.createElement('script');
@@ -116,10 +116,10 @@
                 fetch(levelPath).then(res => res.arrayBuffer()).then(buffer => {
                     const data = new Uint8Array(buffer);
                     const ptr = Module._malloc(data.length);
-                    Module.HEAPU8.set(data, ptr);
+                    HEAPU8.set(data, ptr);
                     
                     // Notify engine to start the level
-                    Module.ccall('game_level_load', 'null', ['number', 'number'], [ptr, data.length]);
+                    Module._game_level_load(ptr, data.length);
                     
                     Module.setStatus('');
                     canvasElement.focus();

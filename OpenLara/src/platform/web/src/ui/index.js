@@ -108,6 +108,7 @@ export class StreamingUI {
         peerId: p.peerId,
         status: p.hasChannel ? 'active' : 'idle'
       })));
+      this.updateAllMetrics();
     };
 
     // Monitor transfers

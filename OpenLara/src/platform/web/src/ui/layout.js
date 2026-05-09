@@ -44,18 +44,9 @@ export class Layout {
       hideTimeout = setTimeout(hideUI, 5000); // Auto-hide after 5s of inactivity
     };
 
-    // Edge hover to restore
+    // Restore UI on any mouse movement
     document.addEventListener('mousemove', (e) => {
-      const threshold = 100;
-      const isNearEdge = 
-        e.clientX < threshold || 
-        e.clientX > window.innerWidth - threshold || 
-        e.clientY < threshold || 
-        e.clientY > window.innerHeight - threshold;
-      
-      if (isNearEdge) {
-        resetTimer();
-      }
+      resetTimer();
     });
 
     // Start timer

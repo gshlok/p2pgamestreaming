@@ -83,6 +83,14 @@
                 if (window.p2pManager) {
                     clearInterval(checkP2P);
                     window.ui = new StreamingUI(window.p2pManager);
+                    
+                    // Auto-load first level so new peers don't stare at a black screen
+                    setTimeout(() => {
+                        console.log('[Main] Auto-starting game...');
+                        window.loadLevel('1/LEVEL1.PSX');
+                        const select = document.querySelector('.level-select-ui');
+                        if (select) select.value = '1/LEVEL1.PSX';
+                    }, 1000);
                 }
             }, 100);
         });
