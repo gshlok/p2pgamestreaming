@@ -59,6 +59,23 @@ class P2PManager {
         this._connectingPeers = new Set();
     }
 
+    /**
+     * Normalize an asset path to a consistent format (no leading slash, relative).
+     */
+    _normalize(path) {
+        if (!path) return '';
+        let n = path;
+        // Strip origin prefix
+        if (n.startsWith('http://') || n.startsWith('https://') || n.startsWith('//')) {
+            try {
+                const url = new URL(n, location.origin);
+                n = url.pathname;
+            } catch (e) {}
+        }
+        // Strip leading slash
+        return n.replace(/^\//, '');
+    }
+
     _autoDetectSignalingUrl() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         return `${proto}//${location.host}/ws`;
@@ -74,7 +91,7 @@ class P2PManager {
         // Populate local assets from cache
         const cached = await this.cache.listAssets();
         for (const name of cached) {
-            this.localAssets.add(name);
+            this.localAssets.add(this._normalize(name));
         }
 
         return new Promise((resolve, reject) => {
@@ -89,7 +106,7 @@ class P2PManager {
                 this._send({
                     type: 'register',
                     peerId: this.peerId,
-                    assets: Array.from(this.localAssets),
+                    assets: Array.from(this.localAssets).map(a => this._normalize(a)),
                     info: {
                         userAgent: navigator.userAgent.slice(0, 50),
                         timestamp: Date.now()
@@ -153,7 +170,7 @@ class P2PManager {
             case 'peer-list':
                 for (const peer of msg.peers) {
                     this.peers.set(peer.peerId, {
-                        assets: new Set(peer.assets || []),
+                        assets: new Set((peer.assets || []).map(a => this._normalize(a))),
                         info: peer.info || {}
                     });
                 }
@@ -168,7 +185,7 @@ class P2PManager {
 
             case 'peer-joined':
                 this.peers.set(msg.peer.peerId, {
-                    assets: new Set(msg.peer.assets || []),
+                    assets: new Set((msg.peer.assets || []).map(a => this._normalize(a))),
                     info: msg.peer.info || {}
                 });
                 console.log(`[P2P] Peer joined: ${msg.peer.peerId} (${this.peers.size} total)`);
@@ -190,7 +207,7 @@ class P2PManager {
 
             case 'asset-update':
                 if (this.peers.has(msg.peerId)) {
-                    this.peers.get(msg.peerId).assets = new Set(msg.assets || []);
+                    this.peers.get(msg.peerId).assets = new Set((msg.assets || []).map(a => this._normalize(a)));
                     console.log(`[P2P] Peer ${msg.peerId} now has ${msg.assets.length} assets`);
                 }
                 break;
@@ -251,6 +268,10 @@ class P2PManager {
         console.log(`[P2P] Eagerly connecting to ${remotePeerId}...`);
 
         try {
+            if (typeof RTCPeerConnection === 'undefined') {
+                console.warn(`[P2P] RTCPeerConnection unavailable (non-secure context?), skipping eager connect to ${remotePeerId}`);
+                return;
+            }
             await this._createOfferTo(remotePeerId, '__eager_connect__');
         } catch (e) {
             console.warn(`[P2P] Eager connect to ${remotePeerId} failed:`, e.message);
@@ -502,7 +523,7 @@ class P2PManager {
     /**
      * Serve an asset to a peer through the WebSocket signaling server.
      * Used when no DataChannel is available (fallback path).
-     * Encodes asset as base64 since WebSocket text frames can't carry binary.
+     * Optimized for large assets using chunked processing.
      */
     async _serveAssetViaWS(toPeerId, assetName) {
         const cached = await this.cache.get(assetName);
@@ -511,15 +532,20 @@ class P2PManager {
             return;
         }
 
-        // Convert Uint8Array to base64 for WebSocket text transport
+        console.log(`[P2P] Encoding ${assetName} for WS relay...`);
+        const startTime = Date.now();
+        
+        // Fast Uint8Array to Base64 using chunked processing
+        const CHUNK_SIZE = 0x8000; // 32KB chunks
         let binary = '';
         const bytes = cached.data;
-        for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
+        for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK_SIZE));
         }
         const base64 = btoa(binary);
-
-        console.log(`[P2P] Relaying ${assetName} (${(cached.size / 1024).toFixed(1)}KB) to ${toPeerId} via WS`);
+        
+        const encodeTime = Date.now() - startTime;
+        console.log(`[P2P] Relaying ${assetName} (${(cached.size / 1024).toFixed(1)}KB) to ${toPeerId} via WS (encoded in ${encodeTime}ms)`);
 
         this._send({
             type: 'ws-relay-asset',
@@ -542,19 +568,21 @@ class P2PManager {
      * @returns {Promise<{data: Uint8Array, source: string, peerId?: string}>}
      */
     async fetchAsset(assetName) {
+        const normalizedName = this._normalize(assetName);
+        
         // DEDUP: If this exact asset is already being fetched, wait on the
         // existing promise instead of spawning another origin request.
-        if (this._inflight && this._inflight.has(assetName)) {
-            console.log(`[P2P] Dedup: waiting on in-flight request for ${assetName}`);
-            return this._inflight.get(assetName);
+        if (this._inflight && this._inflight.has(normalizedName)) {
+            console.log(`[P2P] Dedup: waiting on in-flight request for ${normalizedName}`);
+            return this._inflight.get(normalizedName);
         }
 
-        const promise = this._doFetchAsset(assetName);
+        const promise = this._doFetchAsset(normalizedName);
 
         // Track in-flight
         if (!this._inflight) this._inflight = new Map();
-        this._inflight.set(assetName, promise);
-        promise.finally(() => this._inflight.delete(assetName));
+        this._inflight.set(normalizedName, promise);
+        promise.finally(() => this._inflight.delete(normalizedName));
 
         return promise;
     }
@@ -602,10 +630,14 @@ class P2PManager {
                             this._recordTransfer(assetName, 'peer', result.peerId, result.data.length, duration);
                             return { data: result.data, source: 'peer', peerId: result.peerId };
                         }
+                    } else {
+                        console.log(`[P2P] All ${peersWithAsset.length} peers failed for ${assetName}, falling back to origin.`);
                     }
                 } catch (e) {
                     console.warn(`[P2P] Peer fetch failed for ${assetName}:`, e.message);
                 }
+            } else {
+                console.log(`[P2P] No peers found with asset ${assetName}`);
             }
         }
 
@@ -638,6 +670,7 @@ class P2PManager {
      * Try fetching from peers via WebRTC DataChannel
      */
     async _fetchFromPeer(assetName, peerIds) {
+        const normalizedName = this._normalize(assetName);
         // Try the first available peer
         for (const peerId of peerIds) {
             try {
@@ -646,24 +679,24 @@ class P2PManager {
 
                 if (channel && channel.readyState === 'open') {
                     // DataChannel is ready — use the fast path
-                    console.log(`[P2P] Requesting ${assetName} from ${peerId} via DataChannel`);
-                    return await this._requestViaDataChannel(channel, peerId, assetName);
+                    console.log(`[P2P] Requesting ${normalizedName} from ${peerId} via DataChannel`);
+                    return await this._requestViaDataChannel(channel, peerId, normalizedName);
                 }
 
                 // DataChannel not ready — try WebSocket relay as fallback
-                console.log(`[P2P] No open DataChannel to ${peerId}, trying WS relay for ${assetName}`);
-                const relayResult = await this._requestViaWSRelay(peerId, assetName);
+                console.log(`[P2P] No open DataChannel to ${peerId}, trying WS relay for ${normalizedName}`);
+                const relayResult = await this._requestViaWSRelay(peerId, normalizedName);
                 if (relayResult) return relayResult;
 
                 // If WS relay also didn't work, try establishing DataChannel
-                // (for future requests — this one might timeout)
-                if (!channel || channel.readyState !== 'open') {
-                    await this._createOfferTo(peerId, assetName);
-
+                // (only if supported)
+                if (typeof RTCPeerConnection !== 'undefined' && (!channel || channel.readyState !== 'open')) {
+                    await this._createOfferTo(peerId, normalizedName);
+                    
                     // Wait for channel to open (with timeout)
                     try {
                         channel = await new Promise((resolve, reject) => {
-                            const timeout = setTimeout(() => reject(new Error('Channel open timeout')), 5000);
+                            const timeout = setTimeout(() => reject(new Error('Channel open timeout')), 4000);
                             const check = setInterval(() => {
                                 const ch = this.dataChannels.get(peerId);
                                 if (ch && ch.readyState === 'open') {
@@ -673,15 +706,14 @@ class P2PManager {
                                 }
                             }, 50);
                         });
+                        return await this._requestViaDataChannel(channel, peerId, normalizedName);
                     } catch (e) {
                         console.warn(`[P2P] DataChannel to ${peerId} didn't open in time`);
                         continue;
                     }
-
-                    return await this._requestViaDataChannel(channel, peerId, assetName);
                 }
             } catch (e) {
-                console.warn(`[P2P] Failed to fetch ${assetName} from ${peerId}:`, e.message);
+                console.warn(`[P2P] Failed to fetch ${normalizedName} from ${peerId}:`, e.message);
                 continue;
             }
         }
@@ -711,11 +743,13 @@ class P2PManager {
         if (!this.isConnected()) return Promise.resolve(null);
 
         return new Promise((resolve, reject) => {
+            // Use longer timeout for WS relay of large assets
+            const wsTimeout = Math.max(this.peerTimeout, 10000); 
             const timeout = setTimeout(() => {
                 this.pendingRequests.delete(assetName);
-                console.log(`[P2P] WS relay timeout for ${assetName} from ${peerId}`);
+                console.warn(`[P2P] WS relay timeout for ${assetName} from ${peerId} (after ${wsTimeout}ms)`);
                 resolve(null);  // Resolve null (not reject) to allow fallback to origin
-            }, this.peerTimeout);
+            }, wsTimeout);
 
             this.pendingRequests.set(assetName, { resolve, reject, timeout });
 
@@ -739,10 +773,11 @@ class P2PManager {
         }
 
         try {
-            // Decode base64 to Uint8Array
+            // Optimized base64 to Uint8Array
             const binaryString = atob(base64Data);
-            const data = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
+            const len = binaryString.length;
+            const data = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
                 data[i] = binaryString.charCodeAt(i);
             }
 
@@ -757,7 +792,7 @@ class P2PManager {
             });
             this.pendingRequests.delete(assetName);
         } catch (e) {
-            console.error(`[P2P] Error decoding WS-relayed asset:`, e);
+            console.error(`[P2P] Error decoding WS-relayed asset ${assetName}:`, e);
             clearTimeout(pending.timeout);
             pending.resolve(null);
             this.pendingRequests.delete(assetName);
@@ -800,16 +835,17 @@ class P2PManager {
      * Announce that we now have a new asset
      */
     announceAsset(assetName) {
-        this.localAssets.add(assetName);
+        const normalized = this._normalize(assetName);
+        this.localAssets.add(normalized);
         if (this.isConnected()) {
-            console.log(`[P2P] Announcing asset: ${assetName} (total: ${this.localAssets.size})`);
+            console.log(`[P2P] Announcing asset: ${normalized} (total: ${this.localAssets.size})`);
             this._send({
                 type: 'asset-announce',
                 peerId: this.peerId,
-                assets: [assetName]
+                assets: [normalized]
             });
         } else {
-            console.log(`[P2P] Queued asset locally (not connected yet): ${assetName}`);
+            console.log(`[P2P] Queued asset locally (not connected yet): ${normalized}`);
         }
     }
 

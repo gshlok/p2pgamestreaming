@@ -42,11 +42,27 @@ class AssetCache {
 
     /**
      * Compute SHA-256 hash of a Uint8Array
+     * Fallback to a simple hash if crypto.subtle is unavailable (non-secure contexts)
      */
     async _computeHash(data) {
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+            try {
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            } catch (e) {
+                console.warn('[AssetCache] SHA-256 failed, using fallback hash:', e.message);
+            }
+        }
+
+        // Fallback: Simple but fast hash for non-secure contexts (LAN hackathon)
+        // This ensures the cache still works even if we can't do real crypto.
+        let hash = 0;
+        for (let i = 0; i < data.length; i++) {
+            hash = ((hash << 5) - hash) + data[i];
+            hash |= 0; // Convert to 32bit integer
+        }
+        return 'fallback-' + Math.abs(hash).toString(16) + '-' + data.length;
     }
 
     /**
