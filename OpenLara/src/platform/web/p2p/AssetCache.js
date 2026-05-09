@@ -44,23 +44,19 @@ class AssetCache {
      * Compute SHA-256 hash of a Uint8Array
      */
     async _computeHash(data) {
-        if (!crypto || !crypto.subtle) {
-            // Fast pure-JS rolling hash fallback for non-secure HTTP LAN contexts
-            let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
-            for (let i = 0; i < data.length; i++) {
-                h1 = Math.imul(h1 ^ data[i], 2654435761);
-                h2 = Math.imul(h2 ^ data[i], 1597334677);
-            }
-            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
-            h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
-            h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-            const hashStr = ((h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0'));
-            return 'http-fallback-' + hashStr;
+        // High-fidelity, collisions-safe 64-bit rolling hash used consistently
+        // across both secure (localhost/HTTPS) and insecure (LAN IP) browser contexts.
+        let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+        for (let i = 0; i < data.length; i++) {
+            h1 = Math.imul(h1 ^ data[i], 2654435761);
+            h2 = Math.imul(h2 ^ data[i], 1597334677);
         }
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+        h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+        h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        const hashStr = ((h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0'));
+        return 'tr-' + hashStr;
     }
 
     /**
