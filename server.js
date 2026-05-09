@@ -205,17 +205,22 @@ wss.on('connection', (ws, req) => {
             }
 
             // -----------------------------------------------------------
-            // WebRTC signaling relay
+            // WebRTC signaling relay & WebSocket transfer fallback
             // -----------------------------------------------------------
             case 'rtc-offer':
             case 'rtc-answer':
-            case 'rtc-ice': {
+            case 'rtc-ice':
+            case 'ws-transfer-request':
+            case 'ws-transfer-response': {
                 if (msg.to) {
                     sendTo(msg.to, {
                         type: msg.type,
                         from: peerId,
                         signal: msg.signal,
-                        assetName: msg.assetName
+                        assetName: msg.assetName,
+                        data: msg.data,
+                        size: msg.size,
+                        hash: msg.hash
                     });
                 }
                 break;

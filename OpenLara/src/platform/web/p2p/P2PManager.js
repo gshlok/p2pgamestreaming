@@ -31,6 +31,7 @@ class P2PManager {
         this.pendingRequests = new Map();  // Map<assetName, { resolve, reject, timeout }>
         this.peerConnections = new Map();  // Map<peerId, RTCPeerConnection>
         this.dataChannels = new Map();     // Map<peerId, RTCDataChannel>
+        this.webrtcSupported = typeof RTCPeerConnection !== 'undefined';
 
         // Metrics
         this.metrics = {
@@ -193,6 +194,14 @@ class P2PManager {
 
             case 'rtc-ice':
                 this._handleRTCIce(msg.from, msg.signal);
+                break;
+
+            case 'ws-transfer-request':
+                this._handleWSTransferRequest(msg.from, msg.assetName);
+                break;
+
+            case 'ws-transfer-response':
+                this._handleWSTransferResponse(msg);
                 break;
 
             // Incoming asset request from another peer
@@ -369,6 +378,8 @@ class P2PManager {
 
         console.log(`[P2P] Serving ${assetName} (${(cached.size / 1024).toFixed(1)}KB) to ${toPeerId}`);
 
+        const startTime = Date.now();
+
         // Send header
         channel.send(JSON.stringify({
             type: 'asset-header',
@@ -379,6 +390,10 @@ class P2PManager {
 
         // Send binary data
         channel.send(cached.data.buffer);
+
+        // Record Upload Transfer
+        const duration = Date.now() - startTime;
+        this._recordTransfer(assetName, 'upload', toPeerId, cached.size, duration);
     }
 
     _handleBinaryData(fromPeerId, buffer) {
@@ -490,7 +505,19 @@ class P2PManager {
         // 3. Try to get from a peer
         if (peersWithAsset.length > 0) {
             try {
-                const result = await this._fetchFromPeer(assetName, peersWithAsset);
+                let result = null;
+                if (this.webrtcSupported) {
+                    result = await this._fetchFromPeer(assetName, peersWithAsset);
+                }
+
+                // If WebRTC is unsupported or failed, try WebSocket fallback!
+                if (!result) {
+                    for (const peerId of peersWithAsset) {
+                        result = await this._fetchFromPeerViaWS(assetName, peerId);
+                        if (result) break;
+                    }
+                }
+
                 if (result) {
                     // Verify integrity if we have a known hash
                     const knownHash = this.assetHashes.get(assetName);
@@ -636,6 +663,13 @@ class P2PManager {
         } else if (source === 'origin') {
             this.metrics.fromOrigin++;
             this.metrics.bytesFromOrigin += size;
+        } else if (source === 'upload') {
+            if (!this.metrics.bytesUploaded) {
+                this.metrics.bytesUploaded = 0;
+                this.metrics.uploadsCount = 0;
+            }
+            this.metrics.bytesUploaded += size;
+            this.metrics.uploadsCount++;
         }
         // 'cache' doesn't count towards transfer metrics
 
@@ -654,11 +688,104 @@ class P2PManager {
             bytesFromPeers: this.metrics.bytesFromPeers,
             bytesFromOrigin: this.metrics.bytesFromOrigin,
             bytesSaved: this.metrics.bytesFromPeers,
+            bytesUploaded: this.metrics.bytesUploaded || 0,
+            uploadsCount: this.metrics.uploadsCount || 0,
             totalTransfers: total,
             recentTransfers: this.metrics.transfers.slice(-10),
             localAssetCount: this.localAssets.size,
             uptime: Date.now() - this.metrics.startTime
         };
+    }
+
+    /**
+     * Try fetching from a peer via the signaling server WebSocket channel (robust HTTP fallback)
+     */
+    async _fetchFromPeerViaWS(assetName, peerId) {
+        console.log(`[P2P] WebRTC failed or unsupported. Trying WebSocket fallback to fetch ${assetName} from ${peerId}`);
+        const startTime = Date.now();
+        try {
+            return await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    this.pendingRequests.delete(assetName);
+                    reject(new Error(`WS fallback timeout for ${assetName} from ${peerId}`));
+                }, this.peerTimeout + 2500); // Allow extra time for base64 serialization
+
+                this.pendingRequests.set(assetName, { resolve, reject, timeout });
+
+                this._send({
+                    type: 'ws-transfer-request',
+                    to: peerId,
+                    assetName
+                });
+            });
+        } catch (e) {
+            console.warn(`[P2P] WebSocket fallback fetch failed:`, e.message);
+            return null;
+        }
+    }
+
+    /**
+     * Handle incoming WebSocket transfer request from another peer
+     */
+    async _handleWSTransferRequest(fromPeerId, assetName) {
+        console.log(`[P2P] Received WebSocket transfer request from ${fromPeerId} for ${assetName}`);
+        const cached = await this.cache.get(assetName);
+        if (!cached) {
+            console.warn(`[P2P] Peer requested ${assetName} via WS but we do not have it`);
+            return;
+        }
+
+        const startTime = Date.now();
+        // Stack-safe ArrayBuffer to Base64 serialization
+        const bytes = new Uint8Array(cached.data);
+        let binary = '';
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i += 8192) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+        }
+        const base64Data = btoa(binary);
+
+        this._send({
+            type: 'ws-transfer-response',
+            to: fromPeerId,
+            assetName,
+            data: base64Data,
+            size: cached.size,
+            hash: cached.hash
+        });
+
+        // Record Upload Transfer
+        const duration = Date.now() - startTime;
+        this._recordTransfer(assetName, 'upload', fromPeerId, cached.size, duration);
+    }
+
+    /**
+     * Handle incoming WebSocket transfer response
+     */
+    _handleWSTransferResponse(msg) {
+        const pending = this.pendingRequests.get(msg.assetName);
+        if (!pending) return;
+
+        this.pendingRequests.delete(msg.assetName);
+        clearTimeout(pending.timeout);
+
+        try {
+            // Decode base64
+            const binaryString = atob(msg.data);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            pending.resolve({
+                data: bytes,
+                hash: msg.hash,
+                peerId: msg.from
+            });
+        } catch (e) {
+            pending.reject(e);
+        }
     }
 
     _getPeerSummary() {

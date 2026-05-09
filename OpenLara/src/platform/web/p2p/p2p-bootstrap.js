@@ -65,6 +65,17 @@
     // Install the intercept
     // -----------------------------------------------------------------------
 
+    function toRelativePath(url) {
+        let path = url;
+        if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+            try {
+                const parsed = new URL(path, location.origin);
+                path = parsed.pathname;
+            } catch (e) {}
+        }
+        return path.replace(/^\//, '');
+    }
+
     function installIntercept() {
         if (interceptInstalled) return;
 
@@ -81,19 +92,21 @@
 
             // Only intercept game asset fetches
             if (p2pManager && p2pManager.isConnected() && isGameAsset(url) && !isExcluded(url)) {
+                const relativePath = toRelativePath(url);
+
                 // DEDUP at fetch level: if this URL is already in-flight,
                 // clone the response from the existing promise
-                if (_interceptInflight.has(url)) {
-                    return _interceptInflight.get(url).then(resp => resp.clone());
+                if (_interceptInflight.has(relativePath)) {
+                    return _interceptInflight.get(relativePath).then(resp => resp.clone());
                 }
 
                 const promise = (async () => {
                     try {
-                        console.log(`[P2P-Intercept] Intercepting: ${url}`);
-                        const result = await p2pManager.fetchAsset(url);
+                        console.log(`[P2P-Intercept] Intercepting: ${relativePath}`);
+                        const result = await p2pManager.fetchAsset(relativePath);
 
                         if (result && result.data) {
-                            console.log(`[P2P-Intercept] ✓ ${url} from ${result.source}${result.peerId ? ' (' + result.peerId + ')' : ''} — ${(result.data.length / 1024).toFixed(1)}KB`);
+                            console.log(`[P2P-Intercept] ✓ ${relativePath} from ${result.source}${result.peerId ? ' (' + result.peerId + ')' : ''} — ${(result.data.length / 1024).toFixed(1)}KB`);
 
                             // Create a synthetic Response from the P2P/cached data
                             return new Response(result.data.buffer.slice(0), {
@@ -108,15 +121,15 @@
                             });
                         }
                     } catch (e) {
-                        console.warn(`[P2P-Intercept] P2P failed for ${url}, passing to origin:`, e.message);
+                        console.warn(`[P2P-Intercept] P2P failed for ${relativePath}, passing to origin:`, e.message);
                     }
 
                     // Fallback to real fetch
                     return _originalFetch(input, init);
                 })();
 
-                _interceptInflight.set(url, promise);
-                promise.finally(() => _interceptInflight.delete(url));
+                _interceptInflight.set(relativePath, promise);
+                promise.finally(() => _interceptInflight.delete(relativePath));
 
                 return promise;
             }
