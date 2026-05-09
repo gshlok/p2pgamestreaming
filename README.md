@@ -1,5 +1,5 @@
 # P2P Game Asset Streaming
-
+THIS IS A GROUP PROJECT FOR NMIT HACKS
 A decentralized, peer-assisted asset streaming layer for game runtimes. This project demonstrates how nearby peers (on the same LAN or network) can share cached game assets (textures, geometry, audio) with each other dynamically at runtime, reducing server dependency and improving load times.
 
 ## 🚀 Overview
