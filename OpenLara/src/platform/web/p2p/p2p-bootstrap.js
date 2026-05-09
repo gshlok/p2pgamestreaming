@@ -41,6 +41,8 @@
             'OpenLara.wasm',
             'OpenLara_wasm.js',
             'OpenLara.js',
+            'chocolate-doom.wasm',
+            'chocolate-doom.js'
         ]
     };
 
@@ -180,6 +182,10 @@
             /\.PCX$/i,
             /\.FMV$/i,
             /\.RPL$/i,
+            /\.data$/i,
+            /\.wad$/i,
+            /\.pk3$/i,
+            /\.lmp$/i
         ];
 
         return assetPatterns.some(p => p.test(path));
