@@ -57,6 +57,28 @@
             if (audioContext && audioContext.state === 'suspended') audioContext.resume();
         }, { once: true });
 
+        function getLanguage() {
+            var lang = navigator.languages && navigator.languages[0] || navigator.language || navigator.userLanguage;
+            if (!lang) return;
+            var id = 0;
+            lang = lang.substring(0, 2);
+            if (lang == "fr") id = 1;
+            else if (lang == "de") id = 2;
+            else if (lang == "es") id = 3;
+            else if (lang == "it") id = 4;
+            else if (lang == "pl") id = 5;
+            else if (lang == "pt") id = 6;
+            else if (lang == "ru" || lang == "be" || lang == "uk") id = 7;
+            else if (lang == "ja") id = 8;
+            else if (lang == "gr") id = 9;
+            else if (lang == "fi") id = 10;
+            else if (lang == "cs") id = 11;
+            else if (lang == "zh") id = 12;
+            else if (lang == "hu") id = 13;
+            else if (lang == "sv") id = 14;
+            Module.ccall('set_def_lang', 'null', ['number'], [id]);
+        }
+
         var script = document.createElement('script');
         script.src = ('WebAssembly' in window) ? "OpenLara_wasm.js" : "OpenLara.js";
         document.body.appendChild(script);

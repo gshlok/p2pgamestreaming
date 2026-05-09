@@ -138,13 +138,16 @@
             this._connectingPeers = new Set();
         }
 
+        isConnected() { return this.connected; }
+
         _normalize(path) {
             if (!path) return '';
-            let n = path;
-            if (n.startsWith('http://') || n.startsWith('https://') || n.startsWith('//')) {
-                try { n = new URL(n, location.origin).pathname; } catch (e) {}
+            try {
+                const url = new URL(path, location.href);
+                return url.pathname.replace(/^\//, '');
+            } catch (e) {
+                return path.replace(/^\//, '');
             }
-            return n.replace(/^\//, '');
         }
 
         _autoDetectSignalingUrl() {
@@ -365,7 +368,7 @@
         async _fetchFromOrigin(name) {
             this._originFetchesInFlight.add(name);
             try {
-                const res = await this._originalFetch(name);
+                const res = await this._originalFetch('/' + name);
                 if (!res.ok) return null;
                 return new Uint8Array(await res.arrayBuffer());
             } finally { this._originFetchesInFlight.delete(name); }
@@ -402,13 +405,38 @@
 
         async _handleRTCOffer(from, signal, assetName) {
             const pc = this._getPC(from);
-            await pc.setRemoteDescription(new RTCSessionDescription(signal));
-            const ans = await pc.createAnswer();
-            await pc.setLocalDescription(ans);
-            this._send({ type: 'rtc-answer', to: from, signal: ans });
+            // Glare handling: if we both send an offer, the peer with the "smaller" ID is the polite one and yields.
+            const polite = this.peerId < from;
+            const offerCollision = pc.signalingState !== 'stable';
+            if (offerCollision && !polite) return; // Ignore incoming offer if we are impolite and have a collision
+
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                const ans = await pc.createAnswer();
+                await pc.setLocalDescription(ans);
+                this._send({ type: 'rtc-answer', to: from, signal: ans });
+            } catch (e) {
+                console.warn('[P2P] RTC Offer Error:', e);
+            }
         }
-        async _handleRTCAnswer(from, signal) { const pc = this.peerConnections.get(from); if (pc) await pc.setRemoteDescription(new RTCSessionDescription(signal)); }
-        async _handleRTCIce(from, signal) { const pc = this.peerConnections.get(from); if (pc) try { await pc.addIceCandidate(new RTCIceCandidate(signal)); } catch (e) {} }
+
+        async _handleRTCAnswer(from, signal) { 
+            const pc = this.peerConnections.get(from); 
+            if (!pc || pc.signalingState === 'stable') return; 
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(signal)); 
+            } catch (e) {
+                console.warn('[P2P] RTC Answer Error:', e);
+            }
+        }
+
+        async _handleRTCIce(from, signal) { 
+            const pc = this.peerConnections.get(from); 
+            if (!pc) return;
+            try { 
+                await pc.addIceCandidate(new RTCIceCandidate(signal)); 
+            } catch (e) {} 
+        }
     }
 
     // =========================================================================
