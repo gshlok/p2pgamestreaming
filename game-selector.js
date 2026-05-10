@@ -158,6 +158,11 @@
             if (viewport) {
                 viewport.src = game.path;
             }
+
+            // Notify main page so OpenLara-specific UI can hide/show
+            if (typeof window.onGameChanged === 'function') {
+                window.onGameChanged(id);
+            }
             
             this.toggle();
         }

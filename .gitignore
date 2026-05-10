@@ -2,3 +2,4 @@ node_modules/
 .DS_Store
 *.log
 emsdk/
+allow-port-3000.bat

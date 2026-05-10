@@ -104,6 +104,15 @@
             }
         };
 
+        // Called by game-selector when switching games
+        window.onGameChanged = (gameId) => {
+            const isOpenLara = gameId === 'openlara';
+            // Hide/show the top-center area (contains level selector) and its content
+            const topCenter = document.querySelector('.area-top-center');
+            if (topCenter) topCenter.style.display = isOpenLara ? '' : 'none';
+            console.log('[Main] Game changed to:', gameId, '| Level selector:', isOpenLara ? 'shown' : 'hidden');
+        };
+
         // Ensure clicking on the game container focuses the game
         document.getElementById('game-container').addEventListener('click', () => {
             const viewport = document.getElementById('game-viewport');

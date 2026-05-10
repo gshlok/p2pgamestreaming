@@ -82,13 +82,12 @@ export class TopologyGraph {
   sendPacket(fromId, toId, type = 'data') {
     let color = type === 'data' ? '#10B981' : '#3B82F6';
     
-    // Origin source always glows orange and has no packet animation
+    // Origin packets use orange color and animate from the origin node
     if (fromId === 'origin') {
-      this.triggerNodeGlow(toId);
-      return;
+      color = '#FB923C';
     }
 
-    if (fromId !== 'me' && fromId !== this.localPeerId) {
+    if (fromId !== 'me' && fromId !== this.localPeerId && fromId !== 'origin') {
       const p = this.peers.find(p => p.id === fromId);
       if (p) color = p.color;
     } else if (toId !== 'me' && toId !== this.localPeerId) {
@@ -128,6 +127,24 @@ export class TopologyGraph {
     ctx.beginPath();
     ctx.arc(centerX, centerY, 90, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Draw "Origin Server" node (fixed top-right)
+    const originX = width - 20;
+    const originY = 20;
+    this.originX = originX;
+    this.originY = originY;
+    ctx.beginPath();
+    ctx.arc(originX, originY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#FB923C';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#FB923C';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.font = '8px JetBrains Mono';
+    ctx.fillStyle = 'rgba(251,146,60,0.7)';
+    ctx.textAlign = 'right';
+    ctx.fillText('ORIGIN', originX - 8, originY + 3);
+    ctx.textAlign = 'left';
 
     // Draw "YOU" node
     ctx.save();
@@ -220,6 +237,8 @@ export class TopologyGraph {
       // Determine Start Point
       if (p.from === 'me' || p.from === this.localPeerId) {
         fromX = centerX; fromY = centerY;
+      } else if (p.from === 'origin') {
+        fromX = this.originX || (width - 20); fromY = this.originY || 20;
       } else {
         const source = this.peers.find(peer => peer.id === p.from);
         if (!source) return false;
@@ -229,6 +248,8 @@ export class TopologyGraph {
       // Determine End Point
       if (p.to === 'me' || p.to === this.localPeerId) {
         toX = centerX; toY = centerY;
+      } else if (p.to === 'origin') {
+        toX = this.originX || (width - 20); toY = this.originY || 20;
       } else {
         const target = this.peers.find(peer => peer.id === p.to);
         if (!target) return false;
