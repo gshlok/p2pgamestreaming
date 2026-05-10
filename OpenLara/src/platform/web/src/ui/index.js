@@ -42,7 +42,17 @@ export class StreamingUI {
     
     // 4. Initial state
     if (this.p2p) {
+      this.topology.setLocalPeerId(this.p2p.peerId);
       this.updateAllMetrics();
+      
+      // Perform initial peer list sync if already connected
+      const initialPeers = this.p2p._getPeerSummary();
+      if (initialPeers.length > 0) {
+        this.topology.setPeers(initialPeers.map(p => ({
+          peerId: p.peerId,
+          status: p.hasChannel ? 'active' : 'idle'
+        })));
+      }
     }
     
     console.log('[UI] Streaming UI initialized');
@@ -111,17 +121,28 @@ export class StreamingUI {
       this.updateAllMetrics();
     };
 
-    // Monitor transfers
+    // Monitor transfers (local events)
     this.p2p.onTransfer = (transfer) => {
       if (transfer.source === 'upload') {
         this.topology.sendPacket('me', transfer.peerId, 'upload');
-      } else {
+      } else if (transfer.source === 'peer') {
         this.feed.addTransfer(transfer.assetName, transfer.source, transfer.peerId);
         this.feed.updateProgress(transfer.assetName, 100);
-        
-        if (transfer.peerId) {
-          this.topology.sendPacket(transfer.peerId, 'me', 'data');
-        }
+        this.topology.sendPacket(transfer.peerId, 'me', 'data');
+      } else if (transfer.source === 'origin') {
+        this.feed.addTransfer(transfer.assetName, transfer.source);
+        this.feed.updateProgress(transfer.assetName, 100);
+        this.topology.sendPacket('origin', 'me', 'data');
+      }
+    };
+
+    // Monitor global network transfers (broadcasted by others)
+    this.p2p.onNetworkTransfer = (event) => {
+      console.log('[UI] Network transfer event:', event);
+      if (event.source === 'peer') {
+        this.topology.sendPacket(event.from, event.to, 'data');
+      } else if (event.source === 'origin') {
+        this.topology.sendPacket('origin', event.to, 'data');
       }
     };
   }

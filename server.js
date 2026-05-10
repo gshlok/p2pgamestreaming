@@ -289,6 +289,14 @@ wss.on('connection', (ws, req) => {
                 }
                 break;
             }
+            
+            // -----------------------------------------------------------
+            // Transfer event (for UI map visualization)
+            // -----------------------------------------------------------
+            case 'transfer-event': {
+                broadcastExcept(peerId, msg);
+                break;
+            }
 
             default:
                 console.warn(`[WS] Unknown message type: ${msg.type}`);

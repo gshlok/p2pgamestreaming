@@ -160,6 +160,7 @@
             this.onTransfer = null;
             this.onPeerListChanged = null;
             this.onMetricsUpdate = null;
+            this.onNetworkTransfer = null;
             this._incomingChunks = new Map();
             this._inflight = new Map();
             this._connectingPeers = new Set();
@@ -250,6 +251,7 @@
                 case 'asset-update':
                     if (this.peers.has(msg.peerId)) {
                         this.peers.get(msg.peerId).assets = new Set((msg.assets || []).map(a => this._normalize(a)));
+                        if (this.onPeerListChanged) this.onPeerListChanged(this._getPeerSummary());
                     }
                     break;
                 case 'rtc-offer': this._handleRTCOffer(msg.from, msg.signal, msg.assetName); break;
@@ -257,6 +259,16 @@
                 case 'rtc-ice': this._handleRTCIce(msg.from, msg.signal); break;
                 case 'asset-request': this._handleAssetRequest(msg.from, msg.assetName); break;
                 case 'ws-relay-asset': this._handleWSRelayedAsset(msg.from, msg.assetName, msg.data, msg.hash); break;
+                case 'transfer-event':
+                    if (this.onNetworkTransfer) {
+                        this.onNetworkTransfer({
+                            from: msg.from,
+                            to: msg.to,
+                            source: msg.source,
+                            assetName: msg.assetName
+                        });
+                    }
+                    break;
             }
         }
 
@@ -291,7 +303,10 @@
 
         _setupChannel(peerId, channel) {
             channel.binaryType = 'arraybuffer';
-            channel.onopen = () => this.dataChannels.set(peerId, channel);
+            channel.onopen = () => {
+                this.dataChannels.set(peerId, channel);
+                if (this.onPeerListChanged) this.onPeerListChanged(this._getPeerSummary());
+            };
             channel.onmessage = (e) => {
                 if (typeof e.data === 'string') {
                     const msg = JSON.parse(e.data);
@@ -312,7 +327,10 @@
                     this._handleBinary(peerId, e.data);
                 }
             };
-            channel.onclose = () => this.dataChannels.delete(peerId);
+            channel.onclose = () => {
+                this.dataChannels.delete(peerId);
+                if (this.onPeerListChanged) this.onPeerListChanged(this._getPeerSummary());
+            };
         }
 
         async _serveAsset(peerId, assetName) {
@@ -522,6 +540,17 @@
             this.metrics.transfers.push(transfer);
             if (this.onTransfer) this.onTransfer(transfer);
             if (this.onMetricsUpdate) this.onMetricsUpdate(this.getMetrics());
+
+            // Broadcast transfer event to all peers for the map visualization
+            if (source !== 'upload' && source !== 'cache') {
+                this._send({
+                    type: 'transfer-event',
+                    from: source === 'peer' ? peerId : 'origin',
+                    to: this.peerId,
+                    source: source,
+                    assetName: name
+                });
+            }
         }
 
         getMetrics() {
@@ -598,7 +627,8 @@
             document.head.appendChild(style);
             this.el = document.createElement('div');
             this.el.id = 'p2p-hud';
-            this.el.innerHTML = `<div>P2P STATUS</div><div id="p2p-stats-mini">Peers: 0 | Saved: 0 B</div><div id="p2p-log" class="p2p-log"></div>`;
+            const displayId = this.manager.peerId.includes('_') ? this.manager.peerId.split('_')[1] : this.manager.peerId;
+            this.el.innerHTML = `<div>P2P STATUS | ID: ${displayId.toUpperCase()}</div><div id="p2p-stats-mini">Peers: 0 | Saved: 0 B</div><div id="p2p-log" class="p2p-log"></div>`;
             document.body.appendChild(this.el);
         }
         _hook() {
