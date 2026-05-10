@@ -46,11 +46,12 @@ const app = express();
 
 // Request logging middleware
 app.use((req, res, next) => {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     res.on('finish', () => {
         if (res.statusCode >= 400) {
-            console.warn(`[HTTP] ${res.statusCode} ${req.method} ${req.url}`);
-        } else {
-            // console.log(`[HTTP] ${res.statusCode} ${req.method} ${req.url}`);
+            console.warn(`[HTTP] ${res.statusCode} ${req.method} ${req.url} - from ${clientIp}`);
+        } else if (req.url === '/' || req.url.endsWith('.html')) {
+            console.log(`[HTTP] ${res.statusCode} ${req.method} ${req.url} - Connection from ${clientIp}`);
         }
     });
     next();
@@ -144,6 +145,8 @@ function sendTo(peerId, message) {
 }
 
 wss.on('connection', (ws, req) => {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    console.log(`[WS] New connection attempt from ${clientIp}`);
     let peerId = null;
 
     ws.on('message', (rawData) => {
