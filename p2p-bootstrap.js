@@ -188,9 +188,12 @@
             if (path.startsWith('/')) return path.slice(1);
 
             // If it already looks like a known server-root-relative path, return as-is
-            if (/^(OpenLara|levels|doom|audio)/i.test(path)) return path;
+            if (/^(OpenLara|level|levels|doom|audio)/i.test(path)) return path;
 
-            // It's a relative path from inside the iframe (e.g. "level/1/LEVEL1.PSX")
+            // Handle relative paths from inside the iframe
+            if (path.startsWith('level/')) return path;
+            if (path.startsWith('audio/')) return path;
+
             // Resolve it against the canonical iframe base path
             const iframeBase = 'OpenLara/src/platform/web/';
             return iframeBase + path;

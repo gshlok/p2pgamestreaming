@@ -10,8 +10,6 @@
     <style>
         body { margin: 0; background: #050508; color: #fff; overflow: hidden; font-family: 'Inter', sans-serif; }
         #game-viewport { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: none; z-index: 1; }
-        #ui-root { z-index: 10; position: relative; pointer-events: none; }
-        #ui-root * { pointer-events: auto; }
         
         /* Game Selector Button */
         #game-select-btn {
@@ -107,10 +105,14 @@
         // Called by game-selector when switching games
         window.onGameChanged = (gameId) => {
             const isOpenLara = gameId === 'openlara';
-            // Hide/show the top-center area (contains level selector) and its content
-            const topCenter = document.querySelector('.area-top-center');
-            if (topCenter) topCenter.style.display = isOpenLara ? '' : 'none';
-            console.log('[Main] Game changed to:', gameId, '| Level selector:', isOpenLara ? 'shown' : 'hidden');
+            
+            // Toggle the entire OpenLara UI root
+            const uiRoot = document.getElementById('ui-root');
+            if (uiRoot) {
+                uiRoot.style.display = isOpenLara ? 'grid' : 'none';
+            }
+            
+            console.log('[Main] Game changed to:', gameId, '| OpenLara UI:', isOpenLara ? 'shown' : 'hidden');
         };
 
         // Ensure clicking on the game container focuses the game

@@ -87,6 +87,10 @@ app.use('/levels', express.static(LEVELS_ROOT, {
     }
 }));
 
+// Serve levels & audio specifically for easier path normalization
+app.use('/level', express.static(path.join(WEB_ROOT, 'OpenLara/src/platform/web/level')));
+app.use('/audio', express.static(path.join(WEB_ROOT, 'OpenLara/src/platform/web/audio')));
+
 // Fallback interceptor for missing optional OpenLara assets (CD audio tracks and missing loading screens)
 // This prevents 404 errors in the console while allowing the game to proceed.
 app.use((req, res, next) => {
